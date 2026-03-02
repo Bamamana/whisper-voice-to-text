@@ -4,6 +4,7 @@ import tempfile
 import threading
 import tkinter as tk
 import wave
+import shutil
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -30,8 +31,28 @@ class WhisperApp:
         self.current_job_id = 0
         self.model_cache_dir = Path(__file__).resolve().parent / "model-cache"
         self.model_cache_dir.mkdir(parents=True, exist_ok=True)
+        self.loaded_model_name = None
+        self.loaded_model = None
+        self.model_loading = False
+        self.device = "cuda" if self._nvidia_available() else "cpu"
+        self.compute_type = "float16" if self.device == "cuda" else "int8"
+
+        self.model_load_status_var = tk.StringVar(value="No model loaded")
+        self.device_status_var = tk.StringVar(value=self._device_status_text())
 
         self._build_ui()
+        self._request_model_load(self.model_var.get())
+
+    def _nvidia_available(self) -> bool:
+        try:
+            return shutil.which("nvidia-smi") is not None
+        except Exception:
+            return False
+
+    def _device_status_text(self) -> str:
+        if self.device == "cuda":
+            return "Compute device: NVIDIA GPU (CUDA)"
+        return "Compute device: CPU"
 
     def _build_ui(self) -> None:
         container = ttk.Frame(self.root, padding=12)
@@ -44,18 +65,28 @@ class WhisperApp:
         ttk.Button(top, text="🎤 Start Mic", command=self.start_recording).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(top, text="⏹ Stop Mic", command=self.stop_recording).pack(side=tk.LEFT, padx=(6, 0))
         ttk.Label(top, text="Model:").pack(side=tk.LEFT, padx=(12, 4))
-        ttk.Combobox(
+        self.model_combo = ttk.Combobox(
             top,
             textvariable=self.model_var,
             values=["tiny", "base", "small", "medium", "large-v3"],
             width=10,
             state="readonly",
-        ).pack(side=tk.LEFT)
+        )
+        self.model_combo.pack(side=tk.LEFT)
+        self.model_combo.bind("<<ComboboxSelected>>", self._on_model_changed)
+
+        self.load_model_button = ttk.Button(top, text="Load Model", command=self.load_selected_model)
+        self.load_model_button.pack(side=tk.LEFT, padx=(6, 0))
+
         self.transcribe_button = ttk.Button(top, text="Transcribe", command=self.start_transcribe)
         self.transcribe_button.pack(side=tk.LEFT, padx=(12, 0))
+        self.copy_button = ttk.Button(top, text="Copy", command=self.copy_output)
+        self.copy_button.pack(side=tk.LEFT, padx=(6, 0))
 
         ttk.Label(container, textvariable=self.file_var).pack(anchor="w", pady=(10, 8))
         ttk.Label(container, textvariable=self.recording_status_var).pack(anchor="w", pady=(0, 8))
+        ttk.Label(container, textvariable=self.model_load_status_var).pack(anchor="w", pady=(0, 4))
+        ttk.Label(container, textvariable=self.device_status_var).pack(anchor="w", pady=(0, 8))
 
         self.output = tk.Text(container, wrap=tk.WORD, height=22)
         self.output.pack(fill=tk.BOTH, expand=True)
@@ -76,6 +107,70 @@ class WhisperApp:
         )
         if path:
             self.file_var.set(path)
+
+    def _on_model_changed(self, _event=None) -> None:
+        self._request_model_load(self.model_var.get())
+
+    def load_selected_model(self) -> None:
+        self._request_model_load(self.model_var.get())
+
+    def _request_model_load(self, model_name: str) -> None:
+        if self.model_loading:
+            self.status_var.set("Model load already running. Please wait.")
+            return
+        if self.loaded_model_name == model_name and self.loaded_model is not None:
+            self.model_load_status_var.set(f"Current model loaded: {model_name}")
+            return
+
+        self.model_loading = True
+        self.model_load_status_var.set(f"Loading model: {model_name}...")
+        self.status_var.set(f"Loading model: {model_name}")
+        self.transcribe_button.configure(state=tk.DISABLED)
+        self.load_model_button.configure(state=tk.DISABLED)
+        self.progress.start(10)
+
+        thread = threading.Thread(target=self._load_model_worker, args=(model_name,), daemon=True)
+        thread.start()
+
+    def _load_model_worker(self, model_name: str) -> None:
+        try:
+            model = WhisperModel(
+                model_name,
+                device=self.device,
+                compute_type=self.compute_type,
+                download_root=str(self.model_cache_dir),
+            )
+            self.root.after(0, self._model_loaded, model_name, model)
+        except Exception as exc:
+            self.root.after(0, self._model_load_failed, model_name, str(exc))
+
+    def _model_loaded(self, model_name: str, model: WhisperModel) -> None:
+        self.loaded_model = model
+        self.loaded_model_name = model_name
+        self.model_loading = False
+        self.progress.stop()
+        self.load_model_button.configure(state=tk.NORMAL)
+        self.transcribe_button.configure(state=tk.NORMAL if not self.is_transcribing else tk.DISABLED)
+        self.model_load_status_var.set(f"Current model loaded: {model_name}")
+        self.status_var.set(f"Model ready: {model_name}")
+
+    def _model_load_failed(self, model_name: str, error: str) -> None:
+        self.model_loading = False
+        self.progress.stop()
+        self.load_model_button.configure(state=tk.NORMAL)
+        self.transcribe_button.configure(state=tk.NORMAL if not self.is_transcribing else tk.DISABLED)
+        self.model_load_status_var.set(f"Model load failed: {model_name}")
+        self.status_var.set("Model load failed")
+        messagebox.showerror("Model load error", error)
+
+    def copy_output(self) -> None:
+        text = self.output.get("1.0", tk.END).strip()
+        if not text:
+            self.status_var.set("Nothing to copy")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.status_var.set("Transcript copied to clipboard")
 
     def start_transcribe(self) -> None:
         filepath = self.file_var.get()
@@ -148,6 +243,15 @@ class WhisperApp:
             self.status_var.set("Transcription already running. Please wait.")
             return
 
+        if self.model_loading:
+            self.status_var.set("Wait for model loading to finish.")
+            return
+
+        if self.loaded_model is None or self.loaded_model_name != self.model_var.get():
+            self.status_var.set("Selected model is not loaded yet. Loading now...")
+            self._request_model_load(self.model_var.get())
+            return
+
         self.is_transcribing = True
         self.current_job_id += 1
         job_id = self.current_job_id
@@ -161,12 +265,9 @@ class WhisperApp:
 
     def _transcribe(self, filepath: str, model_name: str, job_id: int) -> None:
         try:
-            model = WhisperModel(
-                model_name,
-                device="cpu",
-                compute_type="int8",
-                download_root=str(self.model_cache_dir),
-            )
+            model = self.loaded_model
+            if model is None or self.loaded_model_name != model_name:
+                raise RuntimeError("Selected model is not loaded. Please load the model first.")
             segments, _ = model.transcribe(filepath, beam_size=5)
             text = "\n".join(segment.text.strip() for segment in segments if segment.text).strip()
 
