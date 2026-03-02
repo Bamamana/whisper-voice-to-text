@@ -19,3 +19,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Whisper model downloads
+model-cache/

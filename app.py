@@ -28,6 +28,8 @@ class WhisperApp:
         self.sample_rate = 16000
         self.is_transcribing = False
         self.current_job_id = 0
+        self.model_cache_dir = Path(__file__).resolve().parent / "model-cache"
+        self.model_cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._build_ui()
 
@@ -49,13 +51,17 @@ class WhisperApp:
             width=10,
             state="readonly",
         ).pack(side=tk.LEFT)
-        ttk.Button(top, text="Transcribe", command=self.start_transcribe).pack(side=tk.LEFT, padx=(12, 0))
+        self.transcribe_button = ttk.Button(top, text="Transcribe", command=self.start_transcribe)
+        self.transcribe_button.pack(side=tk.LEFT, padx=(12, 0))
 
         ttk.Label(container, textvariable=self.file_var).pack(anchor="w", pady=(10, 8))
         ttk.Label(container, textvariable=self.recording_status_var).pack(anchor="w", pady=(0, 8))
 
         self.output = tk.Text(container, wrap=tk.WORD, height=22)
         self.output.pack(fill=tk.BOTH, expand=True)
+
+        self.progress = ttk.Progressbar(container, mode="indeterminate")
+        self.progress.pack(fill=tk.X, pady=(8, 0))
 
         status = ttk.Label(container, textvariable=self.status_var)
         status.pack(anchor="w", pady=(8, 0))
@@ -147,13 +153,20 @@ class WhisperApp:
         job_id = self.current_job_id
         self.status_var.set(status_message)
         self.output.delete("1.0", tk.END)
+        self.transcribe_button.configure(state=tk.DISABLED)
+        self.progress.start(10)
 
         thread = threading.Thread(target=self._transcribe, args=(filepath, self.model_var.get(), job_id), daemon=True)
         thread.start()
 
     def _transcribe(self, filepath: str, model_name: str, job_id: int) -> None:
         try:
-            model = WhisperModel(model_name, device="cpu", compute_type="int8")
+            model = WhisperModel(
+                model_name,
+                device="cpu",
+                compute_type="int8",
+                download_root=str(self.model_cache_dir),
+            )
             segments, _ = model.transcribe(filepath, beam_size=5)
             text = "\n".join(segment.text.strip() for segment in segments if segment.text).strip()
 
@@ -172,6 +185,8 @@ class WhisperApp:
         self.output.delete("1.0", tk.END)
         self.output.insert("1.0", text)
         self.is_transcribing = False
+        self.progress.stop()
+        self.transcribe_button.configure(state=tk.NORMAL)
         self.status_var.set(f"Done. Saved transcript to: {output_file}")
 
     def _show_error(self, error: str, job_id: int) -> None:
@@ -179,6 +194,8 @@ class WhisperApp:
             return
 
         self.is_transcribing = False
+        self.progress.stop()
+        self.transcribe_button.configure(state=tk.NORMAL)
         self.status_var.set("Transcription failed")
         messagebox.showerror("Error", error)
 
