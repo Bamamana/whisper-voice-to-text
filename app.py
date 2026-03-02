@@ -142,7 +142,34 @@ class WhisperApp:
             )
             self.root.after(0, self._model_loaded, model_name, model)
         except Exception as exc:
-            self.root.after(0, self._model_load_failed, model_name, str(exc))
+            error_text = str(exc)
+            cuda_error = any(token in error_text.lower() for token in ["libcublas", "cuda", "cudnn", "libcudart"])
+            if self.device == "cuda" and cuda_error:
+                try:
+                    self.device = "cpu"
+                    self.compute_type = "int8"
+                    model = WhisperModel(
+                        model_name,
+                        device=self.device,
+                        compute_type=self.compute_type,
+                        download_root=str(self.model_cache_dir),
+                    )
+                    self.root.after(0, self._model_loaded_with_fallback, model_name, model, error_text)
+                    return
+                except Exception as fallback_exc:
+                    self.root.after(0, self._model_load_failed, model_name, str(fallback_exc))
+                    return
+            self.root.after(0, self._model_load_failed, model_name, error_text)
+
+    def _model_loaded_with_fallback(self, model_name: str, model: WhisperModel, original_error: str) -> None:
+        self.device_status_var.set(self._device_status_text())
+        self._model_loaded(model_name, model)
+        self.status_var.set("Model loaded on CPU (CUDA unavailable)")
+        messagebox.showwarning(
+            "CUDA unavailable",
+            "NVIDIA CUDA libraries were not available, so the app switched to CPU automatically.\n\n"
+            f"Original error:\n{original_error}",
+        )
 
     def _model_loaded(self, model_name: str, model: WhisperModel) -> None:
         self.loaded_model = model
@@ -277,7 +304,41 @@ class WhisperApp:
 
             self.root.after(0, self._show_result, text, str(output_file), job_id)
         except Exception as exc:
-            self.root.after(0, self._show_error, str(exc), job_id)
+            error_text = str(exc)
+            cuda_error = any(token in error_text.lower() for token in ["libcublas", "cuda", "cudnn", "libcudart"])
+            if self.device == "cuda" and cuda_error:
+                try:
+                    fallback_model = WhisperModel(
+                        model_name,
+                        device="cpu",
+                        compute_type="int8",
+                        download_root=str(self.model_cache_dir),
+                    )
+                    segments, _ = fallback_model.transcribe(filepath, beam_size=5)
+                    text = "\n".join(segment.text.strip() for segment in segments if segment.text).strip()
+
+                    output_dir = Path(filepath).parent
+                    output_file = output_dir / f"{Path(filepath).stem}.whisper.txt"
+                    output_file.write_text(text, encoding="utf-8")
+
+                    self.root.after(0, self._transcribe_fallback_success, model_name, fallback_model, text, str(output_file), job_id)
+                    return
+                except Exception as fallback_exc:
+                    self.root.after(0, self._show_error, str(fallback_exc), job_id)
+                    return
+            self.root.after(0, self._show_error, error_text, job_id)
+
+    def _transcribe_fallback_success(self, model_name: str, model: WhisperModel, text: str, output_file: str, job_id: int) -> None:
+        self.device = "cpu"
+        self.compute_type = "int8"
+        self.loaded_model = model
+        self.loaded_model_name = model_name
+        self.device_status_var.set(self._device_status_text())
+        self._show_result(text, output_file, job_id)
+        messagebox.showwarning(
+            "CUDA unavailable during transcription",
+            "CUDA failed while transcribing, so the app automatically switched to CPU and completed the transcript.",
+        )
 
     def _show_result(self, text: str, output_file: str, job_id: int) -> None:
         if job_id != self.current_job_id:

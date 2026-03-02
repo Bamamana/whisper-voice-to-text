@@ -15,4 +15,7 @@ echo "Installing Python packages..."
 "$VENV_DIR/bin/pip" install --upgrade pip wheel setuptools
 "$VENV_DIR/bin/pip" install faster-whisper sounddevice
 
+echo "Installing NVIDIA CUDA libraries for GPU acceleration..."
+"$VENV_DIR/bin/pip" install nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12 || echo "Note: CUDA libraries not installed (GPU acceleration may not be available)"
+
 echo "Install complete. Launch with: $APP_DIR/launch.sh"
