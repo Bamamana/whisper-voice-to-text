@@ -3,8 +3,15 @@ set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_FILE="$HOME/Desktop/Whisper-Voice-To-Text.desktop"
+APPLICATIONS_DIR="$HOME/.local/share/applications"
+APPLICATIONS_FILE="$APPLICATIONS_DIR/Whisper-Voice-To-Text.desktop"
 
-cat > "$DESKTOP_FILE" <<EOF
+mkdir -p "$APPLICATIONS_DIR"
+
+write_launcher() {
+	local target_file="$1"
+
+	cat > "$target_file" <<EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
@@ -16,6 +23,13 @@ Icon=audio-input-microphone
 Terminal=false
 Categories=AudioVideo;Utility;
 EOF
+}
+
+write_launcher "$DESKTOP_FILE"
+write_launcher "$APPLICATIONS_FILE"
 
 chmod +x "$DESKTOP_FILE"
+chmod +x "$APPLICATIONS_FILE"
+
 echo "Desktop shortcut created at: $DESKTOP_FILE"
+echo "Applications menu entry created at: $APPLICATIONS_FILE"

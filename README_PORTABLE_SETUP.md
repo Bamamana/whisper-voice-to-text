@@ -1,12 +1,16 @@
 # Whisper Voice To Text (Portable Folder)
 
-This folder is a portable copy of your Whisper desktop app with GPU acceleration support.
+This folder is a portable copy of your Whisper desktop app with selectable CPU, AMD, and NVIDIA install profiles.
 
 ## Included files
 - `app.py` - GUI app (file transcription + microphone recording)
-- `install.sh` - Linux installer (installs system + Python deps + CUDA libraries)
+- `install.sh` - Linux installer with `auto`, `cpu`, `amd`, and `nvidia` profiles
+- `install_cpu.sh` - Explicit CPU setup
+- `install_amd.sh` - Explicit AMD-oriented setup (CPU backend with current faster-whisper build)
+- `install_nvidia.sh` - Explicit NVIDIA CUDA setup
 - `launch.sh` - Linux launcher (sets up LD_LIBRARY_PATH for CUDA)
 - `desktop_launch.sh` - Desktop-safe launcher wrapper (logs failures to `desktop-launch.log`)
+- `choose_profile.py` - Small launcher dialog to choose CPU, AMD, or NVIDIA before starting
 - `Whisper-Voice-To-Text.desktop` - Original desktop entry example
 - `make_desktop_shortcut.sh` - Rebuilds a correct desktop icon path on a new Linux machine
 - `download_models.py` - Pre-download Whisper models into local cache for instant switching
@@ -24,23 +28,38 @@ This folder is a portable copy of your Whisper desktop app with GPU acceleration
 ## Move to another Linux computer
 1. Copy this whole folder to the new computer.
 2. Open terminal in this folder.
-3. Run:
+3. Run one of these:
    ```bash
-   chmod +x install.sh launch.sh make_desktop_shortcut.sh
-   ./install.sh
+   chmod +x install.sh install_cpu.sh install_amd.sh install_nvidia.sh launch.sh make_desktop_shortcut.sh
+   ./install.sh        # auto-detect hardware
+   ./install_amd.sh    # force AMD profile
+   ./install_nvidia.sh # force NVIDIA profile
    ./make_desktop_shortcut.sh
    ```
 4. Double-click the desktop icon `Whisper-Voice-To-Text.desktop`.
 
+### Desktop launcher behavior
+- The desktop icon now opens a small chooser before launch.
+- You can select `Current`, `CPU`, `AMD`, or `NVIDIA`.
+- If you pick a different profile than the one currently installed, the launcher rebuilds `.venv` for that profile and then starts the app.
+- The selected profile is persisted in `.whisper-profile.env` by the installer.
+
 ## GPU Acceleration (NVIDIA CUDA)
 
-### Requirements for GPU acceleration
+### NVIDIA profile
 1. **NVIDIA GPU** with CUDA support
 2. **NVIDIA driver** installed (check with `nvidia-smi`)
-3. **CUDA runtime libraries** - installed automatically by `install.sh`
+3. **CUDA runtime libraries** - installed automatically by `./install_nvidia.sh`
+
+### AMD profile
+- The AMD profile keeps this app usable on AMD systems without pulling NVIDIA CUDA libraries.
+- The current `faster-whisper` build used by this app supports **NVIDIA CUDA or CPU**, not AMD ROCm GPU execution.
+- On AMD systems, this app currently runs on the CPU backend and labels the UI accordingly.
+- This makes the folder portable across AMD and NVIDIA machines while keeping the setups separated.
 
 ### How it works
-- The app detects NVIDIA GPU at startup via `nvidia-smi`
+- The launcher stores the selected install profile in `.whisper-profile.env`
+- The app detects the active profile and available hardware at startup
 - CUDA libraries (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, `nvidia-cuda-runtime-cu12`) are installed in the venv
 - `launch.sh` sets `LD_LIBRARY_PATH` to include these libraries
 - If CUDA fails, the app automatically falls back to CPU
@@ -50,9 +69,9 @@ This folder is a portable copy of your Whisper desktop app with GPU acceleration
 #### Pitfall 1: "Library libcublas.so.12 is not found"
 **Cause**: NVIDIA driver is installed, but CUDA runtime libraries are missing.
 
-**Solution**: The `install.sh` script now installs these automatically. If you see this error:
+**Solution**: The NVIDIA install profile installs these automatically. If you see this error:
 ```bash
-./.venv/bin/pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12
+./install_nvidia.sh
 ```
 
 #### Pitfall 2: CUDA libraries installed but still not found
@@ -91,6 +110,7 @@ nvidia-smi  # Look for "CUDA Version" in the header
 
 ## Notes
 - Models are cached in `model-cache/`.
+- Re-running any install profile recreates `.venv` so the runtime matches the selected hardware profile.
 - To pre-download all models (tiny/base/small/medium/large-v3), run:
    ```bash
    ./.venv/bin/python download_models.py

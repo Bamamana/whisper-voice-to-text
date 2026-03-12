@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import subprocess
 import tempfile
 import threading
 import tkinter as tk
@@ -15,6 +16,7 @@ from faster_whisper import WhisperModel
 
 class WhisperApp:
     def __init__(self, root: tk.Tk) -> None:
+        self.app_dir = Path(__file__).resolve().parent
         self.root = root
         self.root.title("Whisper Voice-to-Text")
         self.root.geometry("800x560")
@@ -29,13 +31,14 @@ class WhisperApp:
         self.sample_rate = 16000
         self.is_transcribing = False
         self.current_job_id = 0
-        self.model_cache_dir = Path(__file__).resolve().parent / "model-cache"
+        self.model_cache_dir = self.app_dir / "model-cache"
         self.model_cache_dir.mkdir(parents=True, exist_ok=True)
         self.loaded_model_name = None
         self.loaded_model = None
         self.model_loading = False
-        self.device = "cuda" if self._nvidia_available() else "cpu"
-        self.compute_type = "float16" if self.device == "cuda" else "int8"
+        self.install_profile = self._load_install_profile()
+        self.detected_gpu_vendor = self._detect_gpu_vendor()
+        self.device, self.compute_type, self.device_label = self._resolve_compute_backend()
 
         self.model_load_status_var = tk.StringVar(value="No model loaded")
         self.device_status_var = tk.StringVar(value=self._device_status_text())
@@ -43,16 +46,65 @@ class WhisperApp:
         self._build_ui()
         self._request_model_load(self.model_var.get())
 
-    def _nvidia_available(self) -> bool:
+    def _load_install_profile(self) -> str:
+        env_value = os.environ.get("WHISPER_ACCELERATOR", "").strip().lower()
+        if env_value in {"auto", "cpu", "nvidia", "amd"}:
+            return env_value
+
+        profile_file = self.app_dir / ".whisper-profile.env"
+        if not profile_file.exists():
+            return "auto"
+
+        for line in profile_file.read_text(encoding="utf-8").splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.strip() == "WHISPER_ACCELERATOR":
+                candidate = value.strip().lower()
+                if candidate in {"auto", "cpu", "nvidia", "amd"}:
+                    return candidate
+        return "auto"
+
+    def _detect_gpu_vendor(self) -> str:
+        if shutil.which("nvidia-smi") is not None:
+            return "nvidia"
+        if shutil.which("rocm-smi") is not None or shutil.which("amd-smi") is not None:
+            return "amd"
+
+        lspci = shutil.which("lspci")
+        if lspci is None:
+            return "unknown"
+
         try:
-            return shutil.which("nvidia-smi") is not None
+            output = subprocess.check_output([lspci], text=True, stderr=subprocess.DEVNULL)
         except Exception:
-            return False
+            return "unknown"
+
+        lowered = output.lower()
+        if "nvidia" in lowered:
+            return "nvidia"
+        if any(token in lowered for token in ["amd/ati", "advanced micro devices", "radeon"]):
+            return "amd"
+        return "unknown"
+
+    def _resolve_compute_backend(self) -> tuple[str, str, str]:
+        if self.install_profile == "nvidia":
+            if self.detected_gpu_vendor == "nvidia":
+                return "cuda", "float16", "NVIDIA GPU (CUDA)"
+            return "cpu", "int8", "CPU (NVIDIA profile selected, but no NVIDIA GPU detected)"
+
+        if self.install_profile == "amd":
+            if self.detected_gpu_vendor == "amd":
+                return "cpu", "int8", "AMD GPU detected (CPU backend active)"
+            return "cpu", "int8", "CPU (AMD profile selected)"
+
+        if self.detected_gpu_vendor == "nvidia":
+            return "cuda", "float16", "NVIDIA GPU (CUDA)"
+        if self.detected_gpu_vendor == "amd":
+            return "cpu", "int8", "AMD GPU detected (CPU backend active)"
+        return "cpu", "int8", "CPU"
 
     def _device_status_text(self) -> str:
-        if self.device == "cuda":
-            return "Compute device: NVIDIA GPU (CUDA)"
-        return "Compute device: CPU"
+        profile_text = f"Install profile: {self.install_profile}"
+        return f"Compute device: {self.device_label} | {profile_text}"
 
     def _build_ui(self) -> None:
         container = ttk.Frame(self.root, padding=12)
@@ -162,6 +214,7 @@ class WhisperApp:
             self.root.after(0, self._model_load_failed, model_name, error_text)
 
     def _model_loaded_with_fallback(self, model_name: str, model: WhisperModel, original_error: str) -> None:
+        self.device_label = "CPU (CUDA unavailable)"
         self.device_status_var.set(self._device_status_text())
         self._model_loaded(model_name, model)
         self.status_var.set("Model loaded on CPU (CUDA unavailable)")
@@ -331,6 +384,7 @@ class WhisperApp:
     def _transcribe_fallback_success(self, model_name: str, model: WhisperModel, text: str, output_file: str, job_id: int) -> None:
         self.device = "cpu"
         self.compute_type = "int8"
+        self.device_label = "CPU (CUDA unavailable)"
         self.loaded_model = model
         self.loaded_model_name = model_name
         self.device_status_var.set(self._device_status_text())
