@@ -8,14 +8,15 @@ This folder is a portable copy of your Whisper desktop app with selectable CPU, 
 - `install_cpu.sh` - Explicit CPU setup
 - `install_amd.sh` - Explicit AMD-oriented setup (CPU backend with current faster-whisper build)
 - `install_nvidia.sh` - Explicit NVIDIA CUDA setup
+- `install_windows.bat` - Windows installer with `auto`, `cpu`, `amd`, and `nvidia` profiles
 - `launch.sh` - Linux launcher (sets up LD_LIBRARY_PATH for CUDA)
 - `desktop_launch.sh` - Desktop-safe launcher wrapper (logs failures to `desktop-launch.log`)
 - `choose_profile.py` - Small launcher dialog to choose CPU, AMD, or NVIDIA before starting
 - `Whisper-Voice-To-Text.desktop` - Original desktop entry example
 - `make_desktop_shortcut.sh` - Rebuilds a correct desktop icon path on a new Linux machine
 - `download_models.py` - Pre-download Whisper models into local cache for instant switching
-- `windows_launch.bat` - Windows launcher template
-- `WINDOWS_NOTES.md` - What to change for Windows
+- `windows_launch.bat` - Windows launcher
+- `WINDOWS_NOTES.md` - Windows install and troubleshooting guide
 
 ## Features
 - **Model preloading**: Select a model from the dropdown and it loads automatically
@@ -37,6 +38,29 @@ This folder is a portable copy of your Whisper desktop app with selectable CPU, 
    ./make_desktop_shortcut.sh
    ```
 4. Double-click the desktop icon `Whisper-Voice-To-Text.desktop`.
+
+## Move to a Windows computer
+1. Copy this whole folder to the Windows machine.
+2. Install Python 3.11 or newer from python.org and confirm `py` works in Command Prompt.
+3. Install FFmpeg and ensure `ffmpeg.exe` is in `PATH`.
+4. Open Command Prompt in this folder and run one of these:
+   ```bat
+   install_windows.bat
+   install_windows.bat cpu
+   install_windows.bat amd
+   install_windows.bat nvidia
+   ```
+5. Start the app with:
+   ```bat
+   windows_launch.bat
+   ```
+
+### Windows profile behavior
+- `auto` prefers `nvidia` when `nvidia-smi` is available, then `amd`, then `cpu`.
+- `cpu` is the safest Windows option and requires no GPU runtime.
+- `amd` currently uses the CPU backend, matching the Linux AMD profile.
+- `nvidia` keeps the app in CUDA mode when your Windows machine already has compatible NVIDIA CUDA and cuDNN runtime libraries available.
+- If CUDA is selected but unavailable at runtime, the app falls back to CPU automatically.
 
 ### Desktop launcher behavior
 - The desktop icon now opens a small chooser before launch.
@@ -63,6 +87,11 @@ This folder is a portable copy of your Whisper desktop app with selectable CPU, 
 - CUDA libraries (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, `nvidia-cuda-runtime-cu12`) are installed in the venv
 - `launch.sh` sets `LD_LIBRARY_PATH` to include these libraries
 - If CUDA fails, the app automatically falls back to CPU
+
+### Windows NVIDIA note
+- The Windows installer does not bundle CUDA runtime DLLs into the venv.
+- For Windows GPU acceleration, install a working NVIDIA driver plus compatible CUDA/cuDNN runtime libraries that are visible in `PATH`.
+- If those libraries are missing, the app still launches and automatically falls back to CPU.
 
 ### Common Pitfalls and Solutions
 
@@ -128,6 +157,7 @@ nvidia-smi  # Look for "CUDA Version" in the header
 1. Check `desktop-launch.log` for errors
 2. Try running directly: `./launch.sh`
 3. Ensure venv exists: `ls .venv/bin/python`
+4. On Windows, run `windows_launch.bat` from Command Prompt so you can see the startup error.
 
 ### Transcription is slow
 - Check if GPU is being used (see "Verifying GPU is being used" above)

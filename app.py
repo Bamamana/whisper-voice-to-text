@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import platform
 import subprocess
 import tempfile
 import threading
@@ -63,7 +64,38 @@ class WhisperApp:
                     return candidate
         return "auto"
 
-    def _detect_gpu_vendor(self) -> str:
+    def _command_output(self, command: list[str]) -> str:
+        try:
+            return subprocess.check_output(command, text=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            return ""
+
+    def _detect_windows_gpu_vendor(self) -> str:
+        if shutil.which("nvidia-smi") is not None:
+            return "nvidia"
+        if shutil.which("amd-smi") is not None:
+            return "amd"
+
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if powershell is None:
+            return "unknown"
+
+        output = self._command_output(
+            [
+                powershell,
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join \"`n\"",
+            ]
+        )
+        lowered = output.lower()
+        if "nvidia" in lowered:
+            return "nvidia"
+        if any(token in lowered for token in ["amd", "radeon", "advanced micro devices"]):
+            return "amd"
+        return "unknown"
+
+    def _detect_linux_gpu_vendor(self) -> str:
         if shutil.which("nvidia-smi") is not None:
             return "nvidia"
         if shutil.which("rocm-smi") is not None or shutil.which("amd-smi") is not None:
@@ -73,16 +105,20 @@ class WhisperApp:
         if lspci is None:
             return "unknown"
 
-        try:
-            output = subprocess.check_output([lspci], text=True, stderr=subprocess.DEVNULL)
-        except Exception:
-            return "unknown"
-
+        output = self._command_output([lspci])
         lowered = output.lower()
         if "nvidia" in lowered:
             return "nvidia"
         if any(token in lowered for token in ["amd/ati", "advanced micro devices", "radeon"]):
             return "amd"
+        return "unknown"
+
+    def _detect_gpu_vendor(self) -> str:
+        system_name = platform.system().lower()
+        if system_name == "windows":
+            return self._detect_windows_gpu_vendor()
+        if system_name == "linux":
+            return self._detect_linux_gpu_vendor()
         return "unknown"
 
     def _resolve_compute_backend(self) -> tuple[str, str, str]:
