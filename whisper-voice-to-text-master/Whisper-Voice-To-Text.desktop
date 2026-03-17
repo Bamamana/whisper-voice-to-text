@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Whisper Voice To Text
+Comment=Transcribe audio/video files locally with Whisper
+Exec=/usr/bin/env bash "/home/steve/Documents/projects/whisper voice to text/desktop_launch.sh"
+Path=/home/steve/Documents/projects/whisper voice to text
+Icon=audio-input-microphone
+Terminal=false
+Categories=AudioVideo;Utility;
