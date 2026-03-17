@@ -8,6 +8,9 @@ Free local Whisper voice-to-text app for Windows and Linux with desktop launcher
 
 I have been working on a free local Whisper voice-to-text app that runs from one repo on both Windows and Linux.
 
+Repo:
+https://github.com/Bamamana/whisper-voice-to-text
+
 Current working features:
 - microphone recording
 - audio and video file transcription
@@ -22,11 +25,17 @@ What I focused on:
 - clear setup docs for Windows and Linux
 - keeping everything local and offline after the initial setup and model downloads
 
-Current docs in the repo:
+Main docs:
 - `README.md`
 - `QUICKSTART.md`
 - `FIRST_RUN.md`
 - `WINDOWS_NOTES.md`
+
+Why I built it this way:
+- I wanted something free and local
+- I wanted one repo that works on both Windows and Linux
+- I wanted models to be downloaded once and then reused locally instead of re-downloading every time
+- I wanted desktop shortcuts/icons so it feels closer to a normal app
 
 Current status:
 - the repo-based install flow is working on Windows and Linux
@@ -40,6 +49,9 @@ If people are interested, I can share more about the Windows CUDA setup, the cro
 
 ## Short version
 
-Built a free local Whisper voice-to-text repo for Windows and Linux.
+Built a free local Whisper voice-to-text repo for Windows and Linux:
+https://github.com/Bamamana/whisper-voice-to-text
+
 It supports mic recording, file transcription, desktop launchers, local model caching, and Windows NVIDIA GPU support.
-Repo install flow is working now; packaged Windows installer is scaffolded but not fully built/tested yet.
+
+The repo-based install flow is working now. The packaged Windows installer is scaffolded in the repo, but the final `Setup.exe` still needs to be built and tested.
