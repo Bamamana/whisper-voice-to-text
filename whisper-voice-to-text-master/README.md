@@ -9,24 +9,41 @@ It supports:
 - NVIDIA GPU acceleration when available
 - desktop launchers on both Linux and Windows
 
+## Current Status
+
+Working now:
+- Windows repo-based install flow
+- Linux repo-based install flow
+- desktop shortcut or icon setup on both platforms
+- microphone recording and file transcription
+- local model caching in `model-cache/`
+- Windows NVIDIA GPU support with automatic CPU fallback
+
+In progress:
+- Windows packaged installer via Inno Setup
+
+Not finished yet:
+- final `WhisperVoiceToTextSetup.exe` build and end-to-end installer verification
+
 ## Start Here
 
 Pick your operating system and follow that checklist.
 
 If you are on Windows:
-1. Install Python 3.11 or newer from python.org.
-2. During Python install, enable `Add python.exe to PATH` and keep the `py` launcher enabled.
-3. Install FFmpeg and make sure `ffmpeg.exe` is in `PATH`.
-4. Open Command Prompt in this repo folder.
-5. Run:
+1. Easiest option if you already built a Windows installer: run `WhisperVoiceToTextSetup.exe` and follow the prompts.
+2. If you are installing from the repo directly, install Python 3.11 or newer from python.org.
+3. During Python install, enable `Add python.exe to PATH` and keep the `py` launcher enabled.
+4. Install FFmpeg and make sure `ffmpeg.exe` is in `PATH`.
+5. Open Command Prompt in this repo folder.
+6. Run:
    ```bat
    install_windows.bat
    ```
-6. Create the desktop shortcut:
+7. Create the desktop shortcut:
    ```bat
    make_windows_shortcut.bat
    ```
-7. Start the app:
+8. Start the app:
    ```bat
    windows_launch.bat
    ```
@@ -59,6 +76,8 @@ Windows:
 - FFmpeg in `PATH`
 - Microsoft Visual C++ Redistributable if a wheel requires it
 - internet access during install and the first model download
+
+If you use the Windows installer, it can attempt to install Python and FFmpeg automatically with `winget` when they are missing.
 
 Linux:
 - internet access during install and the first model download
@@ -171,6 +190,32 @@ windows_launch.bat
 If the app is slow:
 - check whether the device indicator shows GPU or CPU
 - use `tiny` or `base` for faster transcription
+
+## Windows Installer
+
+The repo now includes a real Windows installer definition using Inno Setup.
+
+To build it:
+1. Install Inno Setup 6.
+2. Open Command Prompt in this repo folder.
+3. Run:
+   ```bat
+   build_windows_installer.bat
+   ```
+
+The generated installer is written to:
+
+```text
+dist\windows-installer\WhisperVoiceToTextSetup.exe
+```
+
+What the installer does:
+- copies the app into a per-user install folder under `%LOCALAPPDATA%\Programs`
+- creates a Start Menu shortcut
+- optionally creates a desktop shortcut
+- runs `setup_windows.bat` to install Python or FFmpeg with `winget` when possible
+- runs the app dependency setup and prepares the virtual environment
+- can optionally pre-download the smaller models during install
 
 ## More Detailed Docs
 

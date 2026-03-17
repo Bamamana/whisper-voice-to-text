@@ -45,6 +45,24 @@ What the installer does:
 - Installs `nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, and `nvidia-cuda-runtime-cu12` when the selected profile is `nvidia`
 - Writes `.whisper-profile.env` so the app knows which hardware profile to prefer
 
+## Windows installer
+
+This repo also includes a Windows installer definition for Inno Setup.
+
+To build it from the repo:
+
+```bat
+build_windows_installer.bat
+```
+
+Output:
+
+```text
+dist\windows-installer\WhisperVoiceToTextSetup.exe
+```
+
+The installer copies the app into `%LOCALAPPDATA%\Programs\Whisper Voice To Text`, creates Start Menu shortcuts, optionally creates a desktop shortcut, and runs `setup_windows.bat` to prepare the runtime.
+
 ## Launch on Windows
 
 ```bat

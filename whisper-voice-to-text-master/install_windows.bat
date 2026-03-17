@@ -136,5 +136,5 @@ echo Profiles:
 echo   auto    Detect hardware and choose a sensible setup for this machine
 echo   cpu     Install CPU-only runtime
 echo   amd     Install the AMD profile ^(CPU backend with current faster-whisper build^)
-echo   nvidia  Prefer NVIDIA CUDA runtime if your Windows machine already provides CUDA/cuDNN
+echo   nvidia  Install the NVIDIA CUDA runtime packages into the virtual environment
 exit /b 1

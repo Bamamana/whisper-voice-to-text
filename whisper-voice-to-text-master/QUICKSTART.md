@@ -4,19 +4,20 @@ Use this if you just want the shortest setup steps.
 
 ## Windows
 
-1. Install Python 3.11 or newer from python.org.
-2. Make sure `py` works in Command Prompt.
-3. Install FFmpeg and make sure `ffmpeg.exe` is in `PATH`.
-4. Open Command Prompt in this repo folder.
-5. Run:
+1. Easiest option if you have a built installer: run `WhisperVoiceToTextSetup.exe` and follow the prompts.
+2. If you are installing from the repo directly, install Python 3.11 or newer from python.org.
+3. Make sure `py` works in Command Prompt.
+4. Install FFmpeg and make sure `ffmpeg.exe` is in `PATH`.
+5. Open Command Prompt in this repo folder.
+6. Run:
    ```bat
    install_windows.bat
    ```
-6. Create the desktop shortcut:
+7. Create the desktop shortcut:
    ```bat
    make_windows_shortcut.bat
    ```
-7. Start the app:
+8. Start the app:
    ```bat
    windows_launch.bat
    ```

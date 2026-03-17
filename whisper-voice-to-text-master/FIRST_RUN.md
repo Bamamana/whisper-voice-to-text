@@ -12,6 +12,8 @@ After these steps you will have:
 
 ## Windows First Run
 
+If you already have a built installer, you can run `WhisperVoiceToTextSetup.exe` and let it copy the app, create shortcuts, and run the Windows setup flow for you.
+
 ### 1. Install required software
 
 - Install Python 3.11 or newer from python.org
@@ -26,6 +28,14 @@ Open Command Prompt in this repo folder and run:
 ```bat
 install_windows.bat
 ```
+
+Alternative maintainer flow for packaging:
+
+```bat
+build_windows_installer.bat
+```
+
+That creates `dist\windows-installer\WhisperVoiceToTextSetup.exe`.
 
 If you want to force a specific profile:
 
