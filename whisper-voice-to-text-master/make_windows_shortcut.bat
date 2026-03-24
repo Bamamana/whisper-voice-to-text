@@ -8,7 +8,8 @@ set "SHORTCUT_PATH=%USERPROFILE%\Desktop\%SHORTCUT_NAME%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$shell = New-Object -ComObject WScript.Shell;" ^
   "$shortcut = $shell.CreateShortcut('%SHORTCUT_PATH%');" ^
-  "$shortcut.TargetPath = '%APP_DIR%windows_launch.bat';" ^
+  "$shortcut.TargetPath = '%APP_DIR%.venv\Scripts\pythonw.exe';" ^
+  "$shortcut.Arguments = '""%APP_DIR%windows_launch.pyw""';" ^
   "$shortcut.WorkingDirectory = '%APP_DIR%';" ^
   "$shortcut.IconLocation = '%SystemRoot%\\System32\\shell32.dll,22';" ^
   "$shortcut.Save()"

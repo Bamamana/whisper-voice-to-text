@@ -47,7 +47,7 @@ If you are on Windows:
    ```bat
    windows_launch.bat
    ```
-   Or just double-click the desktop shortcut.
+   Or just double-click the desktop shortcut, which uses the no-console `windows_launch.pyw` launcher.
 
 If you are on Linux:
 1. Open a terminal in this repo folder.
@@ -150,7 +150,7 @@ If you do not pre-download models, the app downloads a model the first time you 
 
 Windows:
 - `make_windows_shortcut.bat` creates a desktop shortcut named `Whisper Voice-to-Text`
-- the shortcut launches `windows_launch.bat`
+- the shortcut launches `windows_launch.pyw` via `pythonw.exe` so the app opens without an extra console window
 
 Linux:
 - `make_desktop_shortcut.sh` creates a desktop icon and an applications-menu entry
@@ -216,6 +216,7 @@ What the installer does:
 - runs `setup_windows.bat` to install Python or FFmpeg with `winget` when possible
 - runs the app dependency setup and prepares the virtual environment
 - can optionally pre-download the smaller models during install
+- launches the app through `windows_launch.pyw` so normal GUI starts do not leave a black console window open
 
 ## More Detailed Docs
 
