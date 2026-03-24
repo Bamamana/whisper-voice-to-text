@@ -2,46 +2,49 @@
 
 This repo is a portable desktop app for local Whisper transcription on Linux and Windows.
 
+It is aimed at people who want a practical local voice-to-text app they can run themselves, with a repo-based setup path and a packaged Windows installer.
+
 It supports:
 - audio and video file transcription
 - microphone recording
 - model switching (`tiny`, `base`, `small`, `medium`, `large-v3`)
 - NVIDIA GPU acceleration when available
 - desktop launchers on both Linux and Windows
+- a packaged Windows installer (`WhisperVoiceToTextSetup.exe`)
 
 ## Current Status
 
 Working now:
 - Windows repo-based install flow
 - Linux repo-based install flow
+- packaged Windows installer via Inno Setup
 - desktop shortcut or icon setup on both platforms
 - microphone recording and file transcription
 - local model caching in `model-cache/`
 - Windows NVIDIA GPU support with automatic CPU fallback
-
-In progress:
-- Windows packaged installer via Inno Setup
-
-Not finished yet:
-- final `WhisperVoiceToTextSetup.exe` build and end-to-end installer verification
 
 ## Start Here
 
 Pick your operating system and follow that checklist.
 
 If you are on Windows:
-1. Easiest option if you already built a Windows installer: run `WhisperVoiceToTextSetup.exe` and follow the prompts.
-2. On a fresh Windows machine, keep internet access available during setup so the installer can bootstrap Python and FFmpeg if needed.
-3. If you are installing from the repo directly, open Command Prompt in this repo folder.
-6. Run:
+1. Easiest option if you have the packaged installer: run `WhisperVoiceToTextSetup.exe` and follow the prompts.
+2. If you are building that installer from the repo yourself, run:
+   ```bat
+   build_windows_installer.bat
+   ```
+   That writes the installer to `dist\windows-installer\WhisperVoiceToTextSetup.exe`.
+3. On a fresh Windows machine, keep internet access available during setup so the installer can bootstrap Python and FFmpeg if needed.
+4. If you are installing from the repo directly instead of using the packaged installer, open Command Prompt in this repo folder.
+5. Run:
    ```bat
    setup_windows.bat
    ```
-7. Create the desktop shortcut:
+6. Create the desktop shortcut:
    ```bat
    make_windows_shortcut.bat
    ```
-8. Start the app:
+7. Start the app:
    ```bat
    windows_launch.bat
    ```
@@ -189,7 +192,7 @@ If the app is slow:
 
 ## Windows Installer
 
-The repo now includes a real Windows installer definition using Inno Setup.
+The repo now includes a working Windows installer built with Inno Setup.
 
 To build it:
 1. Install Inno Setup 6.
@@ -213,6 +216,8 @@ What the installer does:
 - runs the app dependency setup and prepares the virtual environment
 - pre-downloads the `tiny`, `base`, and `small` models during install
 - launches the app through `windows_launch.pyw` so normal GUI starts do not leave a black console window open
+
+If you are sharing the app with a non-developer Windows user, this installer is the simplest path.
 
 ## More Detailed Docs
 
