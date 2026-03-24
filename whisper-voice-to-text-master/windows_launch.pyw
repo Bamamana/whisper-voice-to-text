@@ -48,6 +48,10 @@ def configure_environment() -> None:
 
     nvidia_site_packages = APP_DIR / ".venv" / "Lib" / "site-packages" / "nvidia"
     path_parts = []
+    ffmpeg_bin = APP_DIR / "tools" / "ffmpeg" / "bin"
+    if (ffmpeg_bin / "ffmpeg.exe").exists():
+        path_parts.append(str(ffmpeg_bin))
+
     for relative_path in [
         Path("cublas") / "bin",
         Path("cudnn") / "bin",

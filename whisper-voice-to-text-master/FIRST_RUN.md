@@ -16,17 +16,14 @@ If you already have a built installer, you can run `WhisperVoiceToTextSetup.exe`
 
 ### 1. Install required software
 
-- Install Python 3.11 or newer from python.org
-- During install, enable `Add python.exe to PATH`
-- Keep the `py` launcher enabled
-- Install FFmpeg and make sure `ffmpeg.exe` is in `PATH`
+- Keep internet access available during setup so the Windows flow can bootstrap Python and FFmpeg automatically when they are missing.
 
 ### 2. Install the app
 
 Open Command Prompt in this repo folder and run:
 
 ```bat
-install_windows.bat
+setup_windows.bat
 ```
 
 Alternative maintainer flow for packaging:
@@ -40,9 +37,9 @@ That creates `dist\windows-installer\WhisperVoiceToTextSetup.exe`.
 If you want to force a specific profile:
 
 ```bat
-install_windows.bat cpu
-install_windows.bat amd
-install_windows.bat nvidia
+setup_windows.bat cpu
+setup_windows.bat amd
+setup_windows.bat nvidia
 ```
 
 ### 3. Create the desktop shortcut
@@ -51,22 +48,15 @@ install_windows.bat nvidia
 make_windows_shortcut.bat
 ```
 
-### 4. Pre-download the models
+### 4. Model downloads
 
-Download all models:
+`setup_windows.bat` now pre-downloads `tiny`, `base`, and `small` automatically.
+
+If you want the full cache too, run:
 
 ```bat
 .venv\Scripts\python.exe download_models.py
 ```
-
-Or download only the smaller models first:
-
-```bat
-.venv\Scripts\python.exe download_models.py tiny base small
-```
-
-This stores the models in `model-cache/`.
-After that, choosing a model is much faster because the app loads the local copy instead of downloading it on first use.
 
 ### 5. Start the app
 
@@ -79,11 +69,11 @@ Or double-click the desktop shortcut.
 ### 6. If you want GPU mode
 
 - Make sure `nvidia-smi` works
-- Use `install_windows.bat nvidia` if needed
+- Use `setup_windows.bat nvidia` if needed
 - If a CUDA DLL error appears, rerun:
 
 ```bat
-install_windows.bat nvidia
+setup_windows.bat nvidia
 windows_launch.bat
 ```
 

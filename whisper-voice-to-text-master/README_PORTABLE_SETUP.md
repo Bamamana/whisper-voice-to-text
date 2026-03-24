@@ -11,8 +11,6 @@ Linux:
 - NVIDIA driver plus `nvidia-smi` if you want GPU mode
 
 Windows:
-- Python 3.11 or newer from python.org
-- FFmpeg in `PATH`
 - internet access during install and first model download
 - NVIDIA driver plus `nvidia-smi` if you want GPU mode
 - Microsoft Visual C++ Redistributable if a Python wheel requires it
@@ -57,20 +55,19 @@ Windows:
 
 ## Move to a Windows computer
 1. Copy this whole folder to the Windows machine.
-2. Install Python 3.11 or newer from python.org and confirm `py` works in Command Prompt.
-3. Install FFmpeg and ensure `ffmpeg.exe` is in `PATH`.
-4. Open Command Prompt in this folder and run one of these:
+2. Keep internet access available during setup so the scripts can bootstrap Python and FFmpeg if needed.
+3. Open Command Prompt in this folder and run one of these:
    ```bat
-   install_windows.bat
-   install_windows.bat cpu
-   install_windows.bat amd
-   install_windows.bat nvidia
+   setup_windows.bat
+   setup_windows.bat cpu
+   setup_windows.bat amd
+   setup_windows.bat nvidia
    ```
-5. Start the app with:
+4. Start the app with:
    ```bat
    windows_launch.bat
    ```
-6. Create a desktop shortcut with:
+5. Create a desktop shortcut with:
    ```bat
    make_windows_shortcut.bat
    ```
@@ -108,12 +105,13 @@ Windows:
 - CUDA libraries (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, `nvidia-cuda-runtime-cu12`) are installed in the venv
 - `launch.sh` sets `LD_LIBRARY_PATH` to include these libraries
 - `windows_launch.bat` adds the NVIDIA DLL folders from `.venv\Lib\site-packages\nvidia` to `PATH`
+- On Windows, `setup_windows.bat` also downloads an app-local FFmpeg copy into `tools\ffmpeg\bin` when needed
 - If CUDA fails, the app automatically falls back to CPU
 
 ### Windows NVIDIA note
 - The Windows NVIDIA profile now installs the CUDA runtime packages into the venv, matching the Linux intent without changing the Linux flow.
-- For Windows GPU acceleration, you need a working NVIDIA driver and a successful `install_windows.bat nvidia` run.
-- If a CUDA DLL error appears after an update or a broken install, rerun `install_windows.bat nvidia` to rebuild the environment.
+- For Windows GPU acceleration, you need a working NVIDIA driver and a successful `setup_windows.bat nvidia` run.
+- If a CUDA DLL error appears after an update or a broken install, rerun `setup_windows.bat nvidia` to rebuild the environment.
 
 ### Common Pitfalls and Solutions
 
@@ -155,7 +153,7 @@ nvidia-smi  # Look for "CUDA Version" in the header
 
 **Solution**: Rebuild the Windows NVIDIA environment:
 ```bat
-install_windows.bat nvidia
+setup_windows.bat nvidia
 windows_launch.bat
 ```
 

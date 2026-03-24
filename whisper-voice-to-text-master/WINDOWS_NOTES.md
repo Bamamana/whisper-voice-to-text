@@ -3,34 +3,23 @@
 This repo now includes a Windows installer and launcher, so you can keep one portable copy for both Linux and Windows.
 
 ## Prerequisites
-- Python 3.11 or newer from python.org
-- FFmpeg in `PATH`
+- Internet access during install
 - Microsoft Visual C++ Redistributable if a Python wheel asks for it
 
 Important:
-- The Windows Store `python.exe` alias is not enough for this project
-- Install the real Python distribution from python.org
-- During install, enable `Add python.exe to PATH`
-- Leave the `py` launcher enabled if offered
-
-Check the basics from Command Prompt:
-
-```bat
-py --version
-python --version
-ffmpeg -version
-```
-
-If `python` opens the Microsoft Store instead of printing a version, disable the Python App Execution Alias in `Settings > Apps > Advanced app settings > App execution aliases` and install Python from python.org.
+- The packaged Windows installer now bootstraps Python and FFmpeg for you on a clean machine.
+- It installs Python per-user from python.org when Python 3.11+ is missing.
+- It downloads an app-local FFmpeg copy into `tools\ffmpeg\bin` when FFmpeg is missing.
+- Internet access is still required during setup and model download.
 
 ## Install on Windows
 Open Command Prompt in this folder and run one of these:
 
 ```bat
-install_windows.bat
-install_windows.bat cpu
-install_windows.bat amd
-install_windows.bat nvidia
+setup_windows.bat
+setup_windows.bat cpu
+setup_windows.bat amd
+setup_windows.bat nvidia
 ```
 
 Profiles:
@@ -41,9 +30,12 @@ Profiles:
 
 What the installer does:
 - Recreates `.venv`
+- Downloads and installs Python 3.11+ automatically when needed
+- Downloads an app-local FFmpeg build automatically when needed
 - Installs `faster-whisper`, `sounddevice`, and supporting Python packaging tools
 - Installs `nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, and `nvidia-cuda-runtime-cu12` when the selected profile is `nvidia`
 - Writes `.whisper-profile.env` so the app knows which hardware profile to prefer
+- Pre-downloads the `tiny`, `base`, and `small` models during setup
 
 ## Windows installer
 
@@ -69,7 +61,7 @@ The installer copies the app into `%LOCALAPPDATA%\Programs\Whisper Voice To Text
 windows_launch.bat
 ```
 
-If `.venv` is missing, the launcher tells you to run `install_windows.bat` first.
+If `.venv` is missing, the launcher tells you to run `setup_windows.bat` or reinstall the app.
 
 ## NVIDIA GPU acceleration on Windows
 
@@ -95,8 +87,8 @@ make_windows_shortcut.bat
 ## Troubleshooting
 
 ### FFmpeg missing
-- Install FFmpeg and add it to `PATH`
-- Restart Command Prompt
+- The installer now downloads an app-local FFmpeg copy automatically.
+- If it was removed later, rerun `setup_windows.bat`.
 - Launch again with `windows_launch.bat`
 
 ### Microphone not working
@@ -106,14 +98,14 @@ make_windows_shortcut.bat
 
 ### GPU not being used
 - Run `nvidia-smi` in another Command Prompt window
-- Make sure you installed with `install_windows.bat nvidia` or `install_windows.bat`
-- If the app still reports CPU, rerun `install_windows.bat nvidia` to rebuild `.venv` with the CUDA runtime packages
+- Make sure you installed with `setup_windows.bat nvidia` or `setup_windows.bat`
+- If the app still reports CPU, rerun `setup_windows.bat nvidia` to rebuild `.venv` with the CUDA runtime packages
 - If the app still reports CPU after reinstalling, the app is using its automatic CPU fallback and you should verify the NVIDIA driver is healthy with `nvidia-smi`
 
 ### Error about `cublas64*.dll` or CUDA DLLs not loading
 - Close the app completely
 - Open Command Prompt in this folder
-- Run `install_windows.bat nvidia`
+- Run `setup_windows.bat nvidia`
 - Start the app again with `windows_launch.bat`
 
 This rebuilds the virtual environment and reinstalls the CUDA runtime packages that the Windows launcher expects.

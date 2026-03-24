@@ -27,7 +27,6 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
-Name: "predownloadmodels"; Description: "Pre-download tiny, base, and small models"; GroupDescription: "Optional content:"; Flags: unchecked
 
 [Files]
 Source: "..\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".git\*,.venv\*,model-cache\*,dist\*,__pycache__\*,.cache\*,desktop-launch.log,.whisper-profile*.env,*.whisper.txt"
@@ -38,5 +37,4 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\.venv\Scripts\pythonw.exe";
 
 [Run]
 Filename: "{app}\setup_windows.bat"; Parameters: "auto --skip-shortcut"; WorkingDir: "{app}"; StatusMsg: "Installing dependencies and preparing the app..."; Flags: waituntilterminated
-Filename: "{app}\.venv\Scripts\python.exe"; Parameters: """{app}\download_models.py"" tiny base small"; WorkingDir: "{app}"; StatusMsg: "Pre-downloading tiny, base, and small models..."; Flags: waituntilterminated; Tasks: predownloadmodels; Check: FileExists(ExpandConstant('{app}\.venv\Scripts\python.exe'))
 Filename: "{app}\.venv\Scripts\pythonw.exe"; Parameters: """{app}\{#MyAppLauncherScript}"""; Description: "Launch {#MyAppName}"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent unchecked; Check: FileExists(ExpandConstant('{app}\.venv\Scripts\pythonw.exe'))

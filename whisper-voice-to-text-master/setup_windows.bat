@@ -2,9 +2,10 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "APP_DIR=%~dp0"
+set "BOOTSTRAP_PS=%APP_DIR%bootstrap_windows.ps1"
 set "PROFILE=auto"
 set "CREATE_SHORTCUT=1"
-set "DOWNLOAD_MODELS="
+set "DOWNLOAD_MODELS=tiny base small"
 
 :parse_args
 if "%~1"=="" goto :main
@@ -15,6 +16,7 @@ if /I "%~1"=="cpu" set "PROFILE=cpu" & shift & goto :parse_args
 if /I "%~1"=="amd" set "PROFILE=amd" & shift & goto :parse_args
 if /I "%~1"=="nvidia" set "PROFILE=nvidia" & shift & goto :parse_args
 if /I "%~1"=="--skip-shortcut" set "CREATE_SHORTCUT=0" & shift & goto :parse_args
+if /I "%~1"=="--skip-model-download" set "DOWNLOAD_MODELS=" & shift & goto :parse_args
 if /I "%~1"=="--download-models" (
   shift
   if "%~1"=="" (
@@ -39,6 +41,10 @@ call :ensure_python
 if errorlevel 1 exit /b 1
 
 call :ensure_ffmpeg
+if errorlevel 1 exit /b 1
+
+set "WHISPER_BOOTSTRAP_PYTHON=%BOOTSTRAP_PYTHON%"
+if defined FFMPEG_BIN_DIR set "PATH=%FFMPEG_BIN_DIR%;%PATH%"
 
 echo Running Windows app installer with profile: %PROFILE%
 call "%APP_DIR%install_windows.bat" %PROFILE%
@@ -63,65 +69,30 @@ echo   windows_launch.bat
 exit /b 0
 
 :ensure_python
-where py >nul 2>nul
-if not errorlevel 1 goto :eof
-
-where python >nul 2>nul
-if errorlevel 1 goto :install_python
-python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>nul
-if not errorlevel 1 goto :eof
-
-:install_python
-where winget >nul 2>nul
-if errorlevel 1 (
-  echo Python 3.11 or newer is required.
-  echo Install Python from python.org and rerun setup_windows.bat.
-  exit /b 1
+set "BOOTSTRAP_PYTHON="
+for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%BOOTSTRAP_PS%" -Action ensure-python`) do (
+  if not defined BOOTSTRAP_PYTHON set "BOOTSTRAP_PYTHON=%%~I"
 )
 
-echo Python 3.11+ was not found. Installing with winget...
-winget install --exact --id Python.Python.3.11 --accept-package-agreements --accept-source-agreements
-if errorlevel 1 (
-  echo Failed to install Python automatically.
-  exit /b 1
-)
+if defined BOOTSTRAP_PYTHON goto :eof
 
-if exist "%SystemRoot%\py.exe" set "PATH=%SystemRoot%;%PATH%"
-if exist "%LocalAppData%\Programs\Python\Launcher\py.exe" set "PATH=%LocalAppData%\Programs\Python\Launcher;%PATH%"
-
-where py >nul 2>nul
-if not errorlevel 1 goto :eof
-
-echo Python was installed, but the py launcher is not visible in this shell yet.
-echo Close this window and rerun setup_windows.bat.
+echo Python 3.11 or newer could not be prepared automatically.
 exit /b 1
 
 :ensure_ffmpeg
-where ffmpeg >nul 2>nul
-if not errorlevel 1 goto :eof
-
-where winget >nul 2>nul
-if errorlevel 1 (
-  echo Warning: FFmpeg was not found and winget is unavailable.
-  echo Install FFmpeg manually later if you need video and compressed audio formats.
-  goto :eof
+set "FFMPEG_BIN_DIR="
+for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%BOOTSTRAP_PS%" -Action ensure-ffmpeg -AppDir "%APP_DIR%"`) do (
+  if not defined FFMPEG_BIN_DIR set "FFMPEG_BIN_DIR=%%~I"
 )
 
-echo FFmpeg was not found. Installing with winget...
-winget install --exact --id Gyan.FFmpeg --accept-package-agreements --accept-source-agreements
-if errorlevel 1 (
-  echo Warning: Failed to install FFmpeg automatically.
-  echo Install FFmpeg manually later if needed.
-  goto :eof
-)
+if defined FFMPEG_BIN_DIR goto :eof
 
-if exist "%LocalAppData%\Microsoft\WinGet\Links\ffmpeg.exe" set "PATH=%LocalAppData%\Microsoft\WinGet\Links;%PATH%"
-if exist "%ProgramFiles%\WinGet\Links\ffmpeg.exe" set "PATH=%ProgramFiles%\WinGet\Links;%PATH%"
-if exist "%ProgramFiles(x86)%\WinGet\Links\ffmpeg.exe" set "PATH=%ProgramFiles(x86)%\WinGet\Links;%PATH%"
+echo FFmpeg could not be prepared automatically.
+exit /b 1
 goto :eof
 
 :usage
-echo Usage: setup_windows.bat [auto^|cpu^|amd^|nvidia] [--skip-shortcut] [--download-models model1 model2 ...]
+echo Usage: setup_windows.bat [auto^|cpu^|amd^|nvidia] [--skip-shortcut] [--skip-model-download] [--download-models model1 model2 ...]
 echo.
 echo Examples:
 echo   setup_windows.bat

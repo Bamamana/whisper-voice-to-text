@@ -4,6 +4,7 @@ setlocal
 set "APP_DIR=%~dp0"
 set "VENV_PY=%APP_DIR%.venv\Scripts\python.exe"
 set "NVIDIA_SITE_PACKAGES=%APP_DIR%.venv\Lib\site-packages\nvidia"
+set "BUNDLED_FFMPEG_DIR=%APP_DIR%tools\ffmpeg\bin"
 
 set HF_HUB_ENABLE_HF_TRANSFER=1
 
@@ -23,6 +24,7 @@ if exist "%NVIDIA_SITE_PACKAGES%\cublas\bin" set "PATH=%NVIDIA_SITE_PACKAGES%\cu
 if exist "%NVIDIA_SITE_PACKAGES%\cudnn\bin" set "PATH=%NVIDIA_SITE_PACKAGES%\cudnn\bin;%PATH%"
 if exist "%NVIDIA_SITE_PACKAGES%\cuda_runtime\bin" set "PATH=%NVIDIA_SITE_PACKAGES%\cuda_runtime\bin;%PATH%"
 if exist "%NVIDIA_SITE_PACKAGES%\cuda_runtime\lib\x64" set "PATH=%NVIDIA_SITE_PACKAGES%\cuda_runtime\lib\x64;%PATH%"
+if exist "%BUNDLED_FFMPEG_DIR%\ffmpeg.exe" set "PATH=%BUNDLED_FFMPEG_DIR%;%PATH%"
 
 where ffmpeg >nul 2>nul
 if errorlevel 1 (

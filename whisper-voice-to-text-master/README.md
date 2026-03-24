@@ -31,13 +31,11 @@ Pick your operating system and follow that checklist.
 
 If you are on Windows:
 1. Easiest option if you already built a Windows installer: run `WhisperVoiceToTextSetup.exe` and follow the prompts.
-2. If you are installing from the repo directly, install Python 3.11 or newer from python.org.
-3. During Python install, enable `Add python.exe to PATH` and keep the `py` launcher enabled.
-4. Install FFmpeg and make sure `ffmpeg.exe` is in `PATH`.
-5. Open Command Prompt in this repo folder.
+2. On a fresh Windows machine, keep internet access available during setup so the installer can bootstrap Python and FFmpeg if needed.
+3. If you are installing from the repo directly, open Command Prompt in this repo folder.
 6. Run:
    ```bat
-   install_windows.bat
+   setup_windows.bat
    ```
 7. Create the desktop shortcut:
    ```bat
@@ -72,12 +70,10 @@ If you are on Linux:
 ## Required Software
 
 Windows:
-- Python 3.11 or newer from python.org
-- FFmpeg in `PATH`
 - Microsoft Visual C++ Redistributable if a wheel requires it
 - internet access during install and the first model download
 
-If you use the Windows installer, it can attempt to install Python and FFmpeg automatically with `winget` when they are missing.
+If you use the Windows installer, it bootstraps Python from python.org and downloads an app-local FFmpeg build automatically when they are missing.
 
 Linux:
 - internet access during install and the first model download
@@ -99,10 +95,10 @@ NVIDIA GPU mode on either platform also needs:
 ## Install Profiles
 
 Windows:
-- `install_windows.bat` uses auto-detection
-- `install_windows.bat cpu` forces CPU mode
-- `install_windows.bat amd` uses the AMD profile, which currently still runs on CPU
-- `install_windows.bat nvidia` installs the NVIDIA CUDA runtime packages into `.venv` and enables GPU use when the NVIDIA driver is healthy
+- `setup_windows.bat` uses auto-detection and prepares the full Windows runtime
+- `setup_windows.bat cpu` forces CPU mode
+- `setup_windows.bat amd` uses the AMD profile, which currently still runs on CPU
+- `setup_windows.bat nvidia` installs the NVIDIA CUDA runtime packages into `.venv` and enables GPU use when the NVIDIA driver is healthy
 
 Linux:
 - `./install.sh` uses auto-detection
@@ -183,7 +179,7 @@ If FFmpeg is missing:
 
 If you see a Windows CUDA DLL error such as `cublas64*.dll`:
 ```bat
-install_windows.bat nvidia
+setup_windows.bat nvidia
 windows_launch.bat
 ```
 
@@ -213,9 +209,9 @@ What the installer does:
 - copies the app into a per-user install folder under `%LOCALAPPDATA%\Programs`
 - creates a Start Menu shortcut
 - optionally creates a desktop shortcut
-- runs `setup_windows.bat` to install Python or FFmpeg with `winget` when possible
+- runs `setup_windows.bat` to bootstrap Python and FFmpeg automatically when they are missing
 - runs the app dependency setup and prepares the virtual environment
-- can optionally pre-download the smaller models during install
+- pre-downloads the `tiny`, `base`, and `small` models during install
 - launches the app through `windows_launch.pyw` so normal GUI starts do not leave a black console window open
 
 ## More Detailed Docs

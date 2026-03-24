@@ -5,13 +5,11 @@ Use this if you just want the shortest setup steps.
 ## Windows
 
 1. Easiest option if you have a built installer: run `WhisperVoiceToTextSetup.exe` and follow the prompts.
-2. If you are installing from the repo directly, install Python 3.11 or newer from python.org.
-3. Make sure `py` works in Command Prompt.
-4. Install FFmpeg and make sure `ffmpeg.exe` is in `PATH`.
-5. Open Command Prompt in this repo folder.
+2. Keep internet access available during setup so the Windows flow can bootstrap Python and FFmpeg if needed.
+3. Open Command Prompt in this repo folder.
 6. Run:
    ```bat
-   install_windows.bat
+   setup_windows.bat
    ```
 7. Create the desktop shortcut:
    ```bat
@@ -26,6 +24,8 @@ Optional: pre-download all models so switching is fast later:
 ```bat
 .venv\Scripts\python.exe download_models.py
 ```
+
+By default, `setup_windows.bat` already pre-downloads `tiny`, `base`, and `small`.
 
 ## Linux
 
@@ -56,6 +56,6 @@ Optional: pre-download all models so switching is fast later:
 - If you want NVIDIA GPU mode, use the default auto-detect installer or the explicit NVIDIA profile.
 - If Windows shows a CUDA DLL error, run:
   ```bat
-  install_windows.bat nvidia
+   setup_windows.bat nvidia
   windows_launch.bat
   ```

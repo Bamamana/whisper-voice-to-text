@@ -4,6 +4,8 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "APP_DIR=%~dp0"
 set "VENV_DIR=%APP_DIR%.venv"
 set "PROFILE_FILE=%APP_DIR%.whisper-profile.env"
+set "BOOTSTRAP_PS=%APP_DIR%bootstrap_windows.ps1"
+set "BUNDLED_FFMPEG_DIR=%APP_DIR%tools\ffmpeg\bin"
 set "PYTHON_CMD="
 set "PROFILE=%~1"
 
@@ -52,27 +54,37 @@ if errorlevel 10 (
 goto :eof
 
 :install
-where py >nul 2>nul
-if not errorlevel 1 (
-  set "PYTHON_CMD=py -3"
+if defined WHISPER_BOOTSTRAP_PYTHON if exist "%WHISPER_BOOTSTRAP_PYTHON%" (
+  set "PYTHON_CMD=%WHISPER_BOOTSTRAP_PYTHON%"
+)
+
+if not defined PYTHON_CMD (
+  for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%BOOTSTRAP_PS%" -Action resolve-python`) do (
+    if not defined PYTHON_CMD set "PYTHON_CMD=%%~I"
+  )
 )
 
 if not defined PYTHON_CMD (
   where python >nul 2>nul
   if not errorlevel 1 (
-    python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 22)" >nul 2>nul
-    if not errorlevel 1 set "PYTHON_CMD=python"
+    for /f "usebackq delims=" %%I in (`python -c "import sys; print(sys.executable)" 2^>nul`) do (
+      if not defined PYTHON_CMD set "PYTHON_CMD=%%~I"
+    )
   )
 )
 
 if not defined PYTHON_CMD (
-  echo Python 3.11 or newer was not found.
-  echo Install Python from python.org and enable both the python.exe PATH option and the py launcher.
-  echo If python.exe only opens the Microsoft Store, disable the Python App Execution Alias in Windows settings.
+  for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%BOOTSTRAP_PS%" -Action ensure-python`) do (
+    if not defined PYTHON_CMD set "PYTHON_CMD=%%~I"
+  )
+)
+
+if not defined PYTHON_CMD (
+  echo Python 3.11 or newer could not be prepared automatically.
   exit /b 1
 )
 
-%PYTHON_CMD% -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 22)" >nul 2>nul
+"%PYTHON_CMD%" -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 22)" >nul 2>nul
 if errorlevel 1 (
   echo Python 3.11 or newer is required.
   echo Install a current Python release from python.org, then run this installer again.
@@ -83,11 +95,20 @@ echo Selected Windows install profile: %PROFILE%
 echo Using Python command: %PYTHON_CMD%
 echo.
 
+if exist "%BUNDLED_FFMPEG_DIR%\ffmpeg.exe" set "PATH=%BUNDLED_FFMPEG_DIR%;%PATH%"
+
 where ffmpeg >nul 2>nul
 if errorlevel 1 (
-  echo Warning: ffmpeg.exe is not in PATH.
-  echo Media conversion for many formats will fail until FFmpeg is installed.
-  echo.
+  for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%BOOTSTRAP_PS%" -Action ensure-ffmpeg -AppDir "%APP_DIR%"`) do (
+    if not defined FFMPEG_BIN_DIR set "FFMPEG_BIN_DIR=%%~I"
+  )
+  if defined FFMPEG_BIN_DIR set "PATH=%FFMPEG_BIN_DIR%;%PATH%"
+)
+
+where ffmpeg >nul 2>nul
+if errorlevel 1 (
+  echo FFmpeg could not be prepared automatically.
+  exit /b 1
 )
 
 if exist "%VENV_DIR%" (
@@ -96,7 +117,7 @@ if exist "%VENV_DIR%" (
 )
 
 echo Creating virtual environment...
-%PYTHON_CMD% -m venv "%VENV_DIR%"
+"%PYTHON_CMD%" -m venv "%VENV_DIR%"
 if errorlevel 1 exit /b 1
 
 echo Upgrading packaging tools...
