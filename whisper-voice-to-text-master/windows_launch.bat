@@ -11,7 +11,7 @@ set HF_HUB_ENABLE_HF_TRANSFER=1
 if not exist "%VENV_PY%" (
   echo Python virtual environment not found.
   echo Run this first:
-  echo   install_windows.bat
+  echo   setup_windows.bat
   pause
   exit /b 1
 )

@@ -111,14 +111,25 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if exist "%VENV_DIR%" (
-  echo Removing existing virtual environment...
-  rmdir /s /q "%VENV_DIR%"
+if exist "%VENV_DIR%\Scripts\python.exe" (
+  echo Reusing existing virtual environment...
+) else (
+  if exist "%VENV_DIR%" (
+    echo Found an incomplete virtual environment. Removing it before repair...
+    rmdir /s /q "%VENV_DIR%"
+  )
+
+  echo Creating virtual environment...
+  "%PYTHON_CMD%" -m venv "%VENV_DIR%"
+  if errorlevel 1 exit /b 1
 )
 
-echo Creating virtual environment...
-"%PYTHON_CMD%" -m venv "%VENV_DIR%"
-if errorlevel 1 exit /b 1
+"%VENV_DIR%\Scripts\python.exe" -m pip --version >nul 2>nul
+if errorlevel 1 (
+  echo Repairing pip inside the virtual environment...
+  "%VENV_DIR%\Scripts\python.exe" -m ensurepip --upgrade
+  if errorlevel 1 exit /b 1
+)
 
 echo Upgrading packaging tools...
 "%VENV_DIR%\Scripts\python.exe" -m pip install --upgrade pip wheel setuptools

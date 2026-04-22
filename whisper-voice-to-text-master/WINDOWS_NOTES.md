@@ -29,13 +29,13 @@ Profiles:
 - `nvidia` installs the CUDA runtime libraries needed by `faster-whisper` into the virtual environment and enables GPU use when an NVIDIA GPU is present
 
 What the installer does:
-- Recreates `.venv`
+- Reuses an existing `.venv` when it is healthy, and repairs or recreates it only when needed
 - Downloads and installs Python 3.11+ automatically when needed
 - Downloads an app-local FFmpeg build automatically when needed
 - Installs `faster-whisper`, `sounddevice`, and supporting Python packaging tools
 - Installs `nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, and `nvidia-cuda-runtime-cu12` when the selected profile is `nvidia`
 - Writes `.whisper-profile.env` so the app knows which hardware profile to prefer
-- Pre-downloads the `tiny`, `base`, and `small` models during setup
+- Pre-downloads the `tiny`, `base`, and `small` models during setup, reusing any models already present in `model-cache\`
 
 ## Windows installer
 
@@ -55,6 +55,8 @@ dist\windows-installer\WhisperVoiceToTextSetup.exe
 
 The installer copies the app into `%LOCALAPPDATA%\Programs\Whisper Voice To Text`, creates Start Menu shortcuts, optionally creates a desktop shortcut, and runs `setup_windows.bat` to prepare the runtime.
 
+Installed shortcuts and Start Menu entries launch `.venv\Scripts\pythonw.exe` with `windows_launch.pyw`, so the app is searchable from Windows Search and opens without a console window.
+
 ## Launch on Windows
 
 ```bat
@@ -62,6 +64,27 @@ windows_launch.bat
 ```
 
 If `.venv` is missing, the launcher tells you to run `setup_windows.bat` or reinstall the app.
+
+## Installer smoke checklist
+
+Use this when validating a newly built `dist\windows-installer\WhisperVoiceToTextSetup.exe`.
+
+1. Build the installer from the repo root:
+
+	```bat
+	.\build_windows_installer.bat
+	```
+
+2. Confirm `dist\windows-installer\WhisperVoiceToTextSetup.exe` exists.
+3. Run `WhisperVoiceToTextSetup.exe` on a clean Windows user profile or test machine.
+4. Confirm the installer copies files and then runs `setup_windows.bat auto --skip-shortcut` automatically.
+5. Confirm setup finishes without asking for a preinstalled Python or FFmpeg path.
+6. Confirm the installed app folder contains `.venv`, `windows_launch.pyw`, and `tools\ffmpeg\bin\ffmpeg.exe` when FFmpeg had to be bootstrapped.
+7. Launch the installed Start Menu shortcut or search for `Whisper Voice To Text` from Windows Search.
+8. Confirm the app opens through `pythonw.exe` with no visible console window.
+9. Open the installed app once with `windows_launch.bat` only if you need troubleshooting output.
+10. Verify the main window opens, file transcription works, and startup does not fail on missing runtime dependencies.
+11. Record the validation date, machine profile used (`auto`, `cpu`, `amd`, or `nvidia`), and any fallback behavior that occurred.
 
 ## NVIDIA GPU acceleration on Windows
 

@@ -29,26 +29,28 @@ Pick your operating system and follow that checklist.
 
 If you are on Windows:
 1. Easiest option if you have the packaged installer: run `WhisperVoiceToTextSetup.exe` and follow the prompts.
-2. If you are building that installer from the repo yourself, run:
+2. Keep internet access available during setup so the installer can bootstrap Python and FFmpeg if needed.
+3. After install finishes, launch `Whisper Voice To Text` from the Start Menu or Windows Search. The desktop shortcut is optional and only appears if you selected it in the installer.
+4. Use `windows_launch.bat` only when you want troubleshooting output from a repo copy or an installed copy.
+5. If you are building that installer from the repo yourself, run:
    ```bat
    build_windows_installer.bat
    ```
    That writes the installer to `dist\windows-installer\WhisperVoiceToTextSetup.exe`.
-3. On a fresh Windows machine, keep internet access available during setup so the installer can bootstrap Python and FFmpeg if needed.
-4. If you are installing from the repo directly instead of using the packaged installer, open Command Prompt in this repo folder.
-5. Run:
+6. If you are installing from the repo directly instead of using the packaged installer, open Command Prompt in this repo folder.
+7. Run:
    ```bat
    setup_windows.bat
    ```
-6. Create the desktop shortcut:
+8. Create the desktop shortcut only if you want one:
    ```bat
    make_windows_shortcut.bat
    ```
-7. Start the app:
+9. Start the app:
    ```bat
    windows_launch.bat
    ```
-   Or just double-click the desktop shortcut, which uses the no-console `windows_launch.pyw` launcher.
+   Or use the Start Menu entry or desktop shortcut, which launch the no-console `windows_launch.pyw` path.
 
 If you are on Linux:
 1. Open a terminal in this repo folder.
@@ -176,9 +178,9 @@ If Python on Windows opens the Microsoft Store instead of printing a version:
 - install Python from python.org
 
 If FFmpeg is missing:
-- install FFmpeg
-- restart your terminal
-- launch the app again
+- rerun `setup_windows.bat`
+- if you used the packaged installer, reinstall or rerun setup from the installed app folder
+- then launch the app again
 
 If you see a Windows CUDA DLL error such as `cublas64*.dll`:
 ```bat
@@ -210,11 +212,11 @@ dist\windows-installer\WhisperVoiceToTextSetup.exe
 
 What the installer does:
 - copies the app into a per-user install folder under `%LOCALAPPDATA%\Programs`
-- creates a Start Menu shortcut
+- creates a Start Menu shortcut that is searchable from Windows Search
 - optionally creates a desktop shortcut
-- runs `setup_windows.bat` to bootstrap Python and FFmpeg automatically when they are missing
-- runs the app dependency setup and prepares the virtual environment
-- pre-downloads the `tiny`, `base`, and `small` models during install
+- runs `setup_windows.bat auto --skip-shortcut` to bootstrap Python and FFmpeg automatically when they are missing
+- runs the app dependency setup and prepares the virtual environment, reusing a healthy `.venv` when one already exists
+- pre-downloads the `tiny`, `base`, and `small` models during install, reusing models already present in `model-cache\`
 - launches the app through `windows_launch.pyw` so normal GUI starts do not leave a black console window open
 
 If you are sharing the app with a non-developer Windows user, this installer is the simplest path.

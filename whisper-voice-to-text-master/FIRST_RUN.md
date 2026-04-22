@@ -12,13 +12,21 @@ After these steps you will have:
 
 ## Windows First Run
 
-If you already have a built installer, you can run `WhisperVoiceToTextSetup.exe` and let it copy the app, create shortcuts, and run the Windows setup flow for you.
+If you already have a built installer, run `WhisperVoiceToTextSetup.exe` and let it copy the app, create the Start Menu entry, optionally create the desktop shortcut, and run the Windows setup flow for you.
 
 ### 1. Install required software
 
 - Keep internet access available during setup so the Windows flow can bootstrap Python and FFmpeg automatically when they are missing.
 
 ### 2. Install the app
+
+Recommended end-user path:
+
+1. Run `WhisperVoiceToTextSetup.exe`.
+2. Let setup finish.
+3. Launch `Whisper Voice To Text` from the Start Menu or Windows Search.
+
+Maintainer or repo-direct path:
 
 Open Command Prompt in this repo folder and run:
 
@@ -44,6 +52,8 @@ setup_windows.bat nvidia
 
 ### 3. Create the desktop shortcut
 
+If you used the installer, this is optional and only needed if you skipped the desktop-shortcut checkbox.
+
 ```bat
 make_windows_shortcut.bat
 ```
@@ -64,7 +74,7 @@ If you want the full cache too, run:
 windows_launch.bat
 ```
 
-Or double-click the desktop shortcut.
+Or launch it from the Start Menu, Windows Search, or the desktop shortcut.
 
 ### 6. If you want GPU mode
 

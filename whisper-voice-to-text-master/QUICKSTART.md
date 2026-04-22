@@ -6,12 +6,14 @@ Use this if you just want the shortest setup steps.
 
 1. Easiest option if you have a built installer: run `WhisperVoiceToTextSetup.exe` and follow the prompts.
 2. Keep internet access available during setup so the Windows flow can bootstrap Python and FFmpeg if needed.
-3. Open Command Prompt in this repo folder.
+3. After install finishes, launch `Whisper Voice To Text` from the Start Menu or Windows Search.
+4. The desktop shortcut is optional and only appears if you selected it in the installer.
+5. If you are installing from the repo instead of using the EXE, open Command Prompt in this repo folder.
 6. Run:
    ```bat
    setup_windows.bat
    ```
-7. Create the desktop shortcut:
+7. Create the desktop shortcut only if you want one:
    ```bat
    make_windows_shortcut.bat
    ```

@@ -84,7 +84,7 @@ Windows:
 - You can select `Current`, `CPU`, `AMD`, or `NVIDIA`.
 - If you pick a different profile than the one currently installed, the launcher rebuilds `.venv` for that profile and then starts the app.
 - The selected profile is persisted in `.whisper-profile.env` by the installer.
-- On Windows, `make_windows_shortcut.bat` creates a desktop shortcut that launches `windows_launch.bat` directly.
+- On Windows, `make_windows_shortcut.bat` creates a desktop shortcut that launches `windows_launch.pyw` through `pythonw.exe`.
 
 ## GPU Acceleration (NVIDIA CUDA)
 
@@ -170,7 +170,7 @@ windows_launch.bat
 - Models are cached in `model-cache/`.
 - Models are downloaded once into `model-cache/` and reused locally on future launches.
 - If you pre-download them with `download_models.py`, switching models later is much faster because the app loads the local copy instead of downloading on demand.
-- Re-running any install profile recreates `.venv` so the runtime matches the selected hardware profile.
+- Re-running a Windows install profile now reuses `.venv` when it is healthy and only repairs or recreates it when needed.
 - To pre-download all models (tiny/base/small/medium/large-v3), run:
    ```bash
    ./.venv/bin/python download_models.py
