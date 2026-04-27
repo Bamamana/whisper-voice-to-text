@@ -22,3 +22,11 @@ Thumbs.db
 
 # Whisper model downloads
 model-cache/
+
+# Build and runtime artifacts
+dist/
+.cache/
+tools/ffmpeg/
+desktop-launch.log
+*.whisper.txt
+.whisper-profile*.env

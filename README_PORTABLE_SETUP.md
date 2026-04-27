@@ -2,20 +2,42 @@
 
 This folder is a portable copy of your Whisper desktop app with selectable CPU, AMD, and NVIDIA install profiles.
 
+## Required software
+
+Linux:
+- internet access during install and first model download
+- `sudo` access for the installer to install system packages
+- Debian/Ubuntu style package management if you use `install.sh` as-is
+- NVIDIA driver plus `nvidia-smi` if you want GPU mode
+
+Windows:
+- internet access during install and first model download
+- NVIDIA driver plus `nvidia-smi` if you want GPU mode
+- Microsoft Visual C++ Redistributable if a Python wheel requires it
+
+Important:
+- `setup_windows.bat` bootstraps Python 3.11+, FFmpeg, and the Visual C++ Redistributable on a clean machine when needed.
+- The packaged Windows installer uses `setup_windows.bat auto --skip-shortcut --skip-model-download` so first install skips optional model pre-downloads.
+- Manual `setup_windows.bat` still pre-downloads `tiny`, `base`, and `small` unless you pass `--skip-model-download`.
+
 ## Included files
 - `app.py` - GUI app (file transcription + microphone recording)
 - `install.sh` - Linux installer with `auto`, `cpu`, `amd`, and `nvidia` profiles
 - `install_cpu.sh` - Explicit CPU setup
 - `install_amd.sh` - Explicit AMD-oriented setup (CPU backend with current faster-whisper build)
 - `install_nvidia.sh` - Explicit NVIDIA CUDA setup
-- `install_windows.bat` - Windows installer with `auto`, `cpu`, `amd`, and `nvidia` profiles
+- `install_windows.bat` - Lower-level Windows environment installer
+- `setup_windows.bat` - Windows bootstrapper for Python, FFmpeg, VC++, install, and optional model download
 - `launch.sh` - Linux launcher (sets up LD_LIBRARY_PATH for CUDA)
 - `desktop_launch.sh` - Desktop-safe launcher wrapper (logs failures to `desktop-launch.log`)
 - `choose_profile.py` - Small launcher dialog to choose CPU, AMD, or NVIDIA before starting
 - `Whisper-Voice-To-Text.desktop` - Original desktop entry example
 - `make_desktop_shortcut.sh` - Rebuilds a correct desktop icon path on a new Linux machine
 - `download_models.py` - Pre-download Whisper models into local cache for instant switching
-- `windows_launch.bat` - Windows launcher
+- `windows_launch.bat` - Console Windows launcher for troubleshooting
+- `windows_launch.pyw` - GUI Windows launcher for normal desktop starts
+- `windows_shortcut_launch.bat` - Shortcut-safe Windows wrapper that delegates to `windows_launch.pyw`
+- `make_windows_shortcut.bat` - Creates a Windows desktop shortcut for the wrapper launcher
 - `WINDOWS_NOTES.md` - Windows install and troubleshooting guide
 
 ## Features
@@ -32,114 +54,74 @@ This folder is a portable copy of your Whisper desktop app with selectable CPU, 
 3. Run one of these:
    ```bash
    chmod +x install.sh install_cpu.sh install_amd.sh install_nvidia.sh launch.sh make_desktop_shortcut.sh
-   ./install.sh        # auto-detect hardware
-   ./install_amd.sh    # force AMD profile
-   ./install_nvidia.sh # force NVIDIA profile
+   ./install.sh
+   ./install_amd.sh
+   ./install_nvidia.sh
    ./make_desktop_shortcut.sh
    ```
 4. Double-click the desktop icon `Whisper-Voice-To-Text.desktop`.
 
 ## Move to a Windows computer
 1. Copy this whole folder to the Windows machine.
-2. Install Python 3.11 or newer from python.org and confirm `py` works in Command Prompt.
-3. Install FFmpeg and ensure `ffmpeg.exe` is in `PATH`.
-4. Open Command Prompt in this folder and run one of these:
+2. Keep internet access available during setup so the scripts can bootstrap Python, FFmpeg, and VC++ if needed.
+3. Open Command Prompt in this folder and run one of these:
    ```bat
-   install_windows.bat
-   install_windows.bat cpu
-   install_windows.bat amd
-   install_windows.bat nvidia
+   setup_windows.bat
+   setup_windows.bat cpu
+   setup_windows.bat amd
+   setup_windows.bat nvidia
    ```
-5. Start the app with:
+4. Start the app with:
    ```bat
    windows_launch.bat
+   ```
+5. Create a desktop shortcut with:
+   ```bat
+   make_windows_shortcut.bat
    ```
 
 ### Windows profile behavior
 - `auto` prefers `nvidia` when `nvidia-smi` is available, then `amd`, then `cpu`.
 - `cpu` is the safest Windows option and requires no GPU runtime.
 - `amd` currently uses the CPU backend, matching the Linux AMD profile.
-- `nvidia` keeps the app in CUDA mode when your Windows machine already has compatible NVIDIA CUDA and cuDNN runtime libraries available.
+- `nvidia` installs the CUDA runtime packages into `.venv` and keeps the app in CUDA mode when your Windows machine has a working NVIDIA driver.
 - If CUDA is selected but unavailable at runtime, the app falls back to CPU automatically.
 
 ### Desktop launcher behavior
-- The desktop icon now opens a small chooser before launch.
-- You can select `Current`, `CPU`, `AMD`, or `NVIDIA`.
-- If you pick a different profile than the one currently installed, the launcher rebuilds `.venv` for that profile and then starts the app.
-- The selected profile is persisted in `.whisper-profile.env` by the installer.
+- The desktop icon uses the real Windows Desktop path instead of assuming `%USERPROFILE%\Desktop`.
+- Shortcuts target `cmd.exe`, which calls `windows_shortcut_launch.bat` instead of pointing directly at `.venv\Scripts\pythonw.exe`.
+- `windows_shortcut_launch.bat` starts `windows_launch.pyw` when the virtual environment is ready and falls back to `windows_launch.bat` for troubleshooting.
 
 ## GPU Acceleration (NVIDIA CUDA)
 
 ### NVIDIA profile
 1. **NVIDIA GPU** with CUDA support
 2. **NVIDIA driver** installed (check with `nvidia-smi`)
-3. **CUDA runtime libraries** - installed automatically by `./install_nvidia.sh`
+3. **CUDA runtime libraries** - installed automatically by `./install_nvidia.sh` on Linux or `setup_windows.bat nvidia` on Windows
 
 ### AMD profile
 - The AMD profile keeps this app usable on AMD systems without pulling NVIDIA CUDA libraries.
 - The current `faster-whisper` build used by this app supports **NVIDIA CUDA or CPU**, not AMD ROCm GPU execution.
 - On AMD systems, this app currently runs on the CPU backend and labels the UI accordingly.
-- This makes the folder portable across AMD and NVIDIA machines while keeping the setups separated.
 
 ### How it works
 - The launcher stores the selected install profile in `.whisper-profile.env`
 - The app detects the active profile and available hardware at startup
 - CUDA libraries (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, `nvidia-cuda-runtime-cu12`) are installed in the venv
-- `launch.sh` sets `LD_LIBRARY_PATH` to include these libraries
+- `launch.sh`, `windows_launch.bat`, and `windows_launch.pyw` set the required library paths before the app starts
 - If CUDA fails, the app automatically falls back to CPU
 
 ### Windows NVIDIA note
-- The Windows installer does not bundle CUDA runtime DLLs into the venv.
-- For Windows GPU acceleration, install a working NVIDIA driver plus compatible CUDA/cuDNN runtime libraries that are visible in `PATH`.
-- If those libraries are missing, the app still launches and automatically falls back to CPU.
-
-### Common Pitfalls and Solutions
-
-#### Pitfall 1: "Library libcublas.so.12 is not found"
-**Cause**: NVIDIA driver is installed, but CUDA runtime libraries are missing.
-
-**Solution**: The NVIDIA install profile installs these automatically. If you see this error:
-```bash
-./install_nvidia.sh
-```
-
-#### Pitfall 2: CUDA libraries installed but still not found
-**Cause**: The libraries are in the venv but not in the library search path.
-
-**Solution**: `launch.sh` now sets `LD_LIBRARY_PATH`. If running Python directly:
-```bash
-export LD_LIBRARY_PATH="$(pwd)/.venv/lib/python3.12/site-packages/nvidia/cublas/lib:$(pwd)/.venv/lib/python3.12/site-packages/nvidia/cudnn/lib:$(pwd)/.venv/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:$LD_LIBRARY_PATH"
-./.venv/bin/python app.py
-```
-
-#### Pitfall 3: Old app instance still running after updates
-**Cause**: Desktop launch keeps old process running; new code isn't loaded.
-
-**Solution**: Kill existing processes before relaunching:
-```bash
-pkill -f 'whisper voice to text.*app.py'
-```
-
-#### Pitfall 4: CUDA version mismatch
-**Cause**: The pip-installed CUDA libraries may not match your driver's CUDA version.
-
-**Solution**: The app will auto-fallback to CPU. For full CUDA support, ensure your NVIDIA driver supports CUDA 12.x. Check with:
-```bash
-nvidia-smi  # Look for "CUDA Version" in the header
-```
-
-### Verifying GPU is being used
-1. Launch the app
-2. Check the device indicator shows "NVIDIA GPU (CUDA)"
-3. Or run in another terminal:
-   ```bash
-   nvidia-smi
-   # Look for the python process in the Processes section
-   ```
+- The Windows NVIDIA profile now installs the CUDA runtime packages into the venv.
+- For Windows GPU acceleration, you need a working NVIDIA driver and a successful `setup_windows.bat nvidia` run.
+- If a CUDA DLL error appears after an update or a broken install, rerun `setup_windows.bat nvidia` to rebuild the environment.
 
 ## Notes
 - Models are cached in `model-cache/`.
-- Re-running any install profile recreates `.venv` so the runtime matches the selected hardware profile.
+- Models are downloaded once into `model-cache/` and reused locally on future launches.
+- If you pre-download them with `download_models.py`, switching models later is much faster because the app loads the local copy instead of downloading on demand.
+- The packaged Windows installer skips model pre-downloads during install for a more reliable first run.
+- Re-running any install profile recreates or repairs `.venv` so the runtime matches the selected hardware profile.
 - To pre-download all models (tiny/base/small/medium/large-v3), run:
    ```bash
    ./.venv/bin/python download_models.py
@@ -160,13 +142,13 @@ nvidia-smi  # Look for "CUDA Version" in the header
 4. On Windows, run `windows_launch.bat` from Command Prompt so you can see the startup error.
 
 ### Transcription is slow
-- Check if GPU is being used (see "Verifying GPU is being used" above)
-- If using CPU, consider using a smaller model (tiny, base, small)
-- GPU is ~10-50x faster than CPU for transcription
+- Check if GPU is being used
+- If using CPU, consider using a smaller model (`tiny`, `base`, `small`)
+- GPU is much faster than CPU for transcription
 
 ### Model won't load
-- Check internet connection (models download from HuggingFace)
-- Check disk space (models are 1-3GB each)
+- Check internet connection
+- Check disk space
 - Try a smaller model first
 
 ### Microphone not working

@@ -34,7 +34,7 @@ If you are on Windows:
    build_windows_installer.bat
    ```
    That writes the installer to `dist\windows-installer\WhisperVoiceToTextSetup.exe`.
-3. On a fresh Windows machine, keep internet access available during setup so the installer can bootstrap Python and FFmpeg if needed.
+3. On a fresh Windows machine, keep internet access available during setup so the installer can bootstrap Python, FFmpeg, and the Visual C++ runtime if needed.
 4. If you are installing from the repo directly instead of using the packaged installer, open Command Prompt in this repo folder.
 5. Run:
    ```bat
@@ -48,7 +48,7 @@ If you are on Windows:
    ```bat
    windows_launch.bat
    ```
-   Or just double-click the desktop shortcut, which uses the no-console `windows_launch.pyw` launcher.
+   Or just double-click the desktop shortcut, which uses the wrapper-based no-console launcher path.
 
 If you are on Linux:
 1. Open a terminal in this repo folder.
@@ -76,7 +76,7 @@ Windows:
 - Microsoft Visual C++ Redistributable if a wheel requires it
 - internet access during install and the first model download
 
-If you use the Windows installer, it bootstraps Python from python.org and downloads an app-local FFmpeg build automatically when they are missing.
+If you use the Windows installer, it bootstraps Python from python.org, installs the Visual C++ Redistributable when needed, and downloads an app-local FFmpeg build automatically when they are missing.
 
 Linux:
 - internet access during install and the first model download
@@ -119,6 +119,9 @@ The app does not need to download the same model every time you start it.
 If you want fast model switching, pre-download the models after install.
 Then changing the dropdown loads the local copy instead of waiting for a network download.
 
+Manual `setup_windows.bat` runs pre-download `tiny`, `base`, and `small` by default.
+The packaged Windows installer skips optional model pre-downloads during install so the first install path is more reliable.
+
 Download all models:
 
 Windows:
@@ -149,7 +152,7 @@ If you do not pre-download models, the app downloads a model the first time you 
 
 Windows:
 - `make_windows_shortcut.bat` creates a desktop shortcut named `Whisper Voice-to-Text`
-- the shortcut launches `windows_launch.pyw` via `pythonw.exe` so the app opens without an extra console window
+- the shortcut resolves the real Windows Desktop folder and launches a wrapper script through `cmd`, which then starts the no-console `windows_launch.pyw` path when available
 
 Linux:
 - `make_desktop_shortcut.sh` creates a desktop icon and an applications-menu entry
@@ -176,8 +179,8 @@ If Python on Windows opens the Microsoft Store instead of printing a version:
 - install Python from python.org
 
 If FFmpeg is missing:
-- install FFmpeg
-- restart your terminal
+- rerun `setup_windows.bat`
+- restart your terminal if you were already using one
 - launch the app again
 
 If you see a Windows CUDA DLL error such as `cublas64*.dll`:
@@ -212,10 +215,10 @@ What the installer does:
 - copies the app into a per-user install folder under `%LOCALAPPDATA%\Programs`
 - creates a Start Menu shortcut
 - optionally creates a desktop shortcut
-- runs `setup_windows.bat` to bootstrap Python and FFmpeg automatically when they are missing
+- runs `setup_windows.bat` to bootstrap Python, FFmpeg, and the Visual C++ runtime automatically when they are missing
 - runs the app dependency setup and prepares the virtual environment
-- pre-downloads the `tiny`, `base`, and `small` models during install
-- launches the app through `windows_launch.pyw` so normal GUI starts do not leave a black console window open
+- skips optional model pre-downloads during installer-driven setup so first install is less fragile
+- launches the app through a wrapper-based shortcut path so normal GUI starts do not depend on a direct `.venv\Scripts\pythonw.exe` shortcut target
 
 If you are sharing the app with a non-developer Windows user, this installer is the simplest path.
 

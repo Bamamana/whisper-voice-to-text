@@ -12,6 +12,38 @@ from tkinter import filedialog, messagebox, ttk
 
 import numpy as np
 import sounddevice as sd
+
+
+def _configure_windows_cuda_dlls() -> None:
+    if platform.system().lower() != "windows":
+        return
+
+    app_dir = Path(__file__).resolve().parent
+    candidate_dirs = [
+        app_dir / ".venv" / "Lib" / "site-packages" / "nvidia" / "cublas" / "bin",
+        app_dir / ".venv" / "Lib" / "site-packages" / "nvidia" / "cudnn" / "bin",
+        app_dir / ".venv" / "Lib" / "site-packages" / "nvidia" / "cuda_runtime" / "bin",
+        app_dir / ".venv" / "Lib" / "site-packages" / "nvidia" / "cuda_runtime" / "lib" / "x64",
+    ]
+
+    existing_dirs = [str(path) for path in candidate_dirs if path.exists()]
+    if not existing_dirs:
+        return
+
+    os.environ["PATH"] = os.pathsep.join(existing_dirs + [os.environ.get("PATH", "")])
+    add_dll_directory = getattr(os, "add_dll_directory", None)
+    if add_dll_directory is None:
+        return
+
+    for dll_dir in existing_dirs:
+        try:
+            add_dll_directory(dll_dir)
+        except OSError:
+            continue
+
+
+_configure_windows_cuda_dlls()
+
 from faster_whisper import WhisperModel
 
 
@@ -231,7 +263,10 @@ class WhisperApp:
             self.root.after(0, self._model_loaded, model_name, model)
         except Exception as exc:
             error_text = str(exc)
-            cuda_error = any(token in error_text.lower() for token in ["libcublas", "cuda", "cudnn", "libcudart"])
+            cuda_error = any(
+                token in error_text.lower()
+                for token in ["libcublas", "cublas", "cuda", "cudnn", "libcudart", "cudart"]
+            )
             if self.device == "cuda" and cuda_error:
                 try:
                     self.device = "cpu"

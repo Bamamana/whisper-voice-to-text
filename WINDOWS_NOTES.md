@@ -3,37 +3,59 @@
 This repo now includes a Windows installer and launcher, so you can keep one portable copy for both Linux and Windows.
 
 ## Prerequisites
-- Python 3.11 or newer from python.org
-- FFmpeg in `PATH`
+- Internet access during install
 - Microsoft Visual C++ Redistributable if a Python wheel asks for it
 
-Check the basics from Command Prompt:
-
-```bat
-py --version
-ffmpeg -version
-```
+Important:
+- The packaged Windows installer bootstraps Python and FFmpeg for you on a clean machine.
+- It installs Python per-user from python.org when Python 3.11+ is missing.
+- It installs the Visual C++ Redistributable when `vcruntime140.dll` is missing.
+- It downloads an app-local FFmpeg copy into `tools\ffmpeg\bin` when FFmpeg is missing.
+- Internet access is still required during setup and model download.
 
 ## Install on Windows
 Open Command Prompt in this folder and run one of these:
 
 ```bat
-install_windows.bat
-install_windows.bat cpu
-install_windows.bat amd
-install_windows.bat nvidia
+setup_windows.bat
+setup_windows.bat cpu
+setup_windows.bat amd
+setup_windows.bat nvidia
 ```
 
 Profiles:
 - `auto` detects NVIDIA first, then AMD, then CPU
 - `cpu` forces CPU mode
 - `amd` keeps the app on the CPU backend
-- `nvidia` marks the install for CUDA use if your Windows machine already has CUDA and cuDNN runtime libraries available
+- `nvidia` installs the CUDA runtime libraries needed by `faster-whisper` into the virtual environment and enables GPU use when an NVIDIA GPU is present
 
 What the installer does:
-- Recreates `.venv`
+- Recreates or repairs `.venv`
+- Downloads and installs Python 3.11+ automatically when needed
+- Downloads an app-local FFmpeg build automatically when needed
+- Installs the Visual C++ Redistributable automatically when needed
 - Installs `faster-whisper`, `sounddevice`, and supporting Python packaging tools
+- Installs `nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, and `nvidia-cuda-runtime-cu12` when the selected profile is `nvidia`
 - Writes `.whisper-profile.env` so the app knows which hardware profile to prefer
+- Pre-downloads the `tiny`, `base`, and `small` models during manual `setup_windows.bat` runs unless `--skip-model-download` is used
+
+## Windows installer
+
+This repo also includes a Windows installer definition for Inno Setup.
+
+To build it from the repo:
+
+```bat
+build_windows_installer.bat
+```
+
+Output:
+
+```text
+dist\windows-installer\WhisperVoiceToTextSetup.exe
+```
+
+The installer copies the app into `%LOCALAPPDATA%\Programs\Whisper Voice To Text`, creates Start Menu shortcuts, optionally creates a desktop shortcut, and runs `setup_windows.bat auto --skip-shortcut --skip-model-download` to prepare the runtime.
 
 ## Launch on Windows
 
@@ -41,29 +63,37 @@ What the installer does:
 windows_launch.bat
 ```
 
-If `.venv` is missing, the launcher tells you to run `install_windows.bat` first.
+If `.venv` is missing, the launcher tells you to run `setup_windows.bat` or reinstall the app.
+
+For normal desktop and installer launches, the shortcut path now runs `windows_shortcut_launch.bat` through `cmd.exe`, and that wrapper starts `windows_launch.pyw` with `pythonw.exe` when the virtual environment is ready.
+Use `windows_launch.bat` when you want console output for troubleshooting.
 
 ## NVIDIA GPU acceleration on Windows
 
-This repo can use CUDA on Windows, but the Windows installer does not bundle CUDA runtime DLLs into the virtual environment the way the Linux installer does.
+This repo can use CUDA on Windows and the Windows NVIDIA install profile now places the required CUDA runtime libraries inside the virtual environment.
 
 For Windows GPU acceleration you need:
 - An NVIDIA GPU with a working driver
 - `nvidia-smi` available
-- Compatible CUDA and cuDNN runtime DLLs available in `PATH`
+- The `nvidia` install profile so the CUDA runtime DLLs are installed into `.venv`
 
-If those libraries are missing, the app falls back to CPU automatically instead of crashing.
+The Windows launchers add those CUDA DLL folders to `PATH` before the app starts. If CUDA still fails at runtime, the app falls back to CPU automatically instead of crashing.
 
 ## Desktop shortcut
-- Right-click `windows_launch.bat`
-- Choose `Send to > Desktop (create shortcut)`
-- Rename the shortcut if you want
+- Run:
+
+```bat
+make_windows_shortcut.bat
+```
+
+- This creates a desktop shortcut named `Whisper Voice-to-Text`
+- The shortcut resolves the real Windows Desktop folder and launches `windows_shortcut_launch.bat` from the correct working folder
 
 ## Troubleshooting
 
 ### FFmpeg missing
-- Install FFmpeg and add it to `PATH`
-- Restart Command Prompt
+- The installer now downloads an app-local FFmpeg copy automatically.
+- If it was removed later, rerun `setup_windows.bat`.
 - Launch again with `windows_launch.bat`
 
 ### Microphone not working
@@ -73,5 +103,14 @@ If those libraries are missing, the app falls back to CPU automatically instead 
 
 ### GPU not being used
 - Run `nvidia-smi` in another Command Prompt window
-- Make sure you installed with `install_windows.bat nvidia` or `install_windows.bat`
-- If the app still reports CPU, your CUDA/cuDNN runtime is not available to the process and the app is using its automatic CPU fallback
+- Make sure you installed with `setup_windows.bat nvidia` or `setup_windows.bat`
+- If the app still reports CPU, rerun `setup_windows.bat nvidia` to rebuild `.venv` with the CUDA runtime packages
+- If the app still reports CPU after reinstalling, the app is using its automatic CPU fallback and you should verify the NVIDIA driver is healthy with `nvidia-smi`
+
+### Error about `cublas64*.dll` or CUDA DLLs not loading
+- Close the app completely
+- Open Command Prompt in this folder
+- Run `setup_windows.bat nvidia`
+- Start the app again with `windows_launch.bat`
+
+This rebuilds the virtual environment and reinstalls the CUDA runtime packages that the Windows launcher expects.
