@@ -109,6 +109,8 @@ class GeminiFormFillerApp:
 
         ttk.Button(recording_actions, text="Start Recording", command=self.start_recording).pack(side=tk.LEFT)
         ttk.Button(recording_actions, text="Stop and Transcribe", command=self.stop_recording).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(recording_actions, text="Fix Grammar / Whisper Text", command=lambda: self.rewrite_transcript_with_gemini("grammar")).pack(side=tk.LEFT, padx=(16, 0))
+        ttk.Button(recording_actions, text="Make Email", command=lambda: self.rewrite_transcript_with_gemini("email")).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(recording_actions, text="Send Transcript To PDF", command=self.send_transcript_to_ai).pack(side=tk.LEFT, padx=(16, 0))
         ttk.Button(recording_actions, text="Export Filled PDF", command=self.export_filled_pdf).pack(side=tk.LEFT, padx=(8, 0))
 
@@ -828,6 +830,62 @@ class GeminiFormFillerApp:
         self.transcript_text.insert("1.0", transcript)
         self.recording_status_var.set("Mic idle")
         self.status_var.set("Transcript ready")
+
+    def rewrite_transcript_with_gemini(self, mode: str) -> None:
+        if self.is_busy:
+            return
+        if not self.api_key_var.get().strip():
+            messagebox.showerror("Missing API key", "Enter your Google AI Studio API key first.")
+            return
+
+        transcript = self.transcript_text.get("1.0", tk.END).strip()
+        if not transcript:
+            messagebox.showerror("Missing transcript", "Record or type a transcript first.")
+            return
+
+        self.is_busy = True
+        label = "email" if mode == "email" else "grammar cleanup"
+        self.status_var.set(f"Sending transcript to Gemini for {label}")
+        threading.Thread(target=self._rewrite_transcript_worker, args=(mode, transcript), daemon=True).start()
+
+    def _rewrite_transcript_worker(self, mode: str, transcript: str) -> None:
+        try:
+            if mode == "email":
+                instruction = (
+                    "Turn the transcript into a clear, professional email. "
+                    "Preserve the speaker's intent and important details. "
+                    "Add a concise subject line, greeting, body, and closing. "
+                    "Do not invent names, dates, attachments, commitments, or facts not present in the transcript. "
+                    "If a recipient name is unknown, use a generic greeting."
+                )
+                result_label = "Email draft ready"
+            else:
+                instruction = (
+                    "Clean up this voice-to-text transcript. "
+                    "Fix grammar, punctuation, capitalization, and likely speech recognition mistakes. "
+                    "Keep the same meaning, same facts, same order, and same overall voice. "
+                    "Do not add new details, remove important details, or turn it into a different format."
+                )
+                result_label = "Transcript cleaned up"
+
+            prompt = f"{instruction}\n\nTranscript:\n{transcript}"
+            client = genai.Client(api_key=self.api_key_var.get().strip())
+            response = client.models.generate_content(
+                model=self.gemini_model_var.get().strip() or DEFAULT_GEMINI_MODEL,
+                contents=prompt,
+            )
+            rewritten = (response.text or "").strip()
+            if not rewritten:
+                raise RuntimeError("Gemini returned an empty response.")
+            self.root.after(0, self._rewrite_transcript_done, rewritten, result_label)
+        except Exception as exc:
+            self.root.after(0, self._task_failed, "Gemini transcript rewrite failed", str(exc))
+
+    def _rewrite_transcript_done(self, rewritten: str, result_label: str) -> None:
+        self.is_busy = False
+        self.transcript_text.delete("1.0", tk.END)
+        self.transcript_text.insert("1.0", rewritten)
+        self.status_var.set(result_label)
 
     def send_transcript_to_ai(self) -> None:
         if self.is_busy:

@@ -14,6 +14,7 @@ This is an experimental version of the app for filling reusable PDF templates fr
 8. Saves fillable PDFs into a local `templates` folder for repeated use.
 9. Auto-prepares simple flat PDFs by detecting blank lines and checkbox squares.
 10. Reviews auto-prepared fields with Gemini to rename fields and suggest obvious missing fields.
+11. Uses Gemini to clean up voice transcripts or turn them into email drafts.
 
 Click a highlighted field on the PDF preview to edit it in place, or double-click a row in the field table to edit a value before export.
 
@@ -23,6 +24,7 @@ Click a highlighted field on the PDF preview to edit it in place, or double-clic
 - Flat PDFs should use Auto-Prepare first so V3 can create a reusable fillable template.
 - Auto-prepare is experimental and works best on clean digital forms with visible blank lines or square checkboxes.
 - Gemini review is a second pass: it improves names and can add clear missing fields, but you should still inspect the template before using it repeatedly.
+- Transcript cleanup and email drafting replace the text currently shown in the transcript box, so review the result before sending it to a PDF or copying it elsewhere.
 - The Google AI Studio API key is stored locally in `.gemini-api-key` in this folder.
 - Always review AI-filled values before using the exported PDF.
 
