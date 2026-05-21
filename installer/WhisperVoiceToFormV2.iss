@@ -2,7 +2,7 @@
 #define MyAppVersion "0.1.0"
 #define MyAppPublisher "Bamamana"
 #define MyAppSubDir "v2_gemini_form_filler"
-#define MyAppLauncherScript "launch_windows_v2.bat"
+#define MyAppLauncherScript "windows_launch_v2.pyw"
 
 [Setup]
 AppId={{49B6A3F7-7CB6-4BB7-8CE3-5C7754656CC4}
@@ -34,9 +34,9 @@ Source: "..\bootstrap_windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\{#MyAppSubDir}\*"; DestDir: "{app}\{#MyAppSubDir}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".venv\*,model-cache\*,__pycache__\*,.gemini-api-key,*.pyc"
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{cmd}"; Parameters: "/d /c """"{app}\{#MyAppSubDir}\{#MyAppLauncherScript}"""""; WorkingDir: "{app}\{#MyAppSubDir}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{cmd}"; Parameters: "/d /c """"{app}\{#MyAppSubDir}\{#MyAppLauncherScript}"""""; WorkingDir: "{app}\{#MyAppSubDir}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppSubDir}\{#MyAppLauncherScript}"; WorkingDir: "{app}\{#MyAppSubDir}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppSubDir}\{#MyAppLauncherScript}"; WorkingDir: "{app}\{#MyAppSubDir}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppSubDir}\install_windows_v2.bat"; WorkingDir: "{app}\{#MyAppSubDir}"; StatusMsg: "Installing dependencies and preparing the V2 app..."; Flags: waituntilterminated
-Filename: "{cmd}"; Parameters: "/d /c """"{app}\{#MyAppSubDir}\{#MyAppLauncherScript}"""""; Description: "Launch {#MyAppName}"; WorkingDir: "{app}\{#MyAppSubDir}"; Flags: postinstall nowait skipifsilent unchecked
+Filename: "{app}\{#MyAppSubDir}\{#MyAppLauncherScript}"; Description: "Launch {#MyAppName}"; WorkingDir: "{app}\{#MyAppSubDir}"; Flags: postinstall nowait skipifsilent unchecked

@@ -9,6 +9,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 import tkinter as tk
 
+import fitz
 import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
@@ -25,7 +26,7 @@ class GeminiFormFillerApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Whisper Voice To Form - V2")
-        self.root.geometry("1040x720")
+        self.root.geometry("1200x760")
 
         self.app_dir = Path(__file__).resolve().parent
         self.api_key_file = self.app_dir / ".gemini-api-key"
@@ -33,8 +34,17 @@ class GeminiFormFillerApp:
         self.model_cache_dir.mkdir(exist_ok=True)
 
         self.pdf_path: Path | None = None
+        self.pdf_document: fitz.Document | None = None
         self.pdf_fields: dict[str, dict] = {}
+        self.pdf_field_locations: dict[str, list[tuple[int, fitz.Rect]]] = {}
+        self.pdf_widget_values: dict[str, str] = {}
         self.field_values: dict[str, str] = {}
+        self.current_page_index = 0
+        self.preview_zoom = 1.25
+        self.preview_image: tk.PhotoImage | None = None
+        self.preview_editor: ttk.Entry | None = None
+        self.preview_editor_window: int | None = None
+        self.preview_editor_field: str | None = None
         self.recording = False
         self.record_stream = None
         self.recorded_chunks: list[np.ndarray] = []
@@ -46,6 +56,7 @@ class GeminiFormFillerApp:
         self.gemini_model_var = tk.StringVar(value=DEFAULT_GEMINI_MODEL)
         self.whisper_model_var = tk.StringVar(value="base")
         self.pdf_status_var = tk.StringVar(value="No PDF loaded")
+        self.page_status_var = tk.StringVar(value="No page loaded")
         self.recording_status_var = tk.StringVar(value="Mic idle")
         self.status_var = tk.StringVar(value="Ready")
 
@@ -88,26 +99,53 @@ class GeminiFormFillerApp:
         ttk.Label(main, textvariable=self.pdf_status_var).pack(anchor="w")
         ttk.Label(main, textvariable=self.recording_status_var).pack(anchor="w", pady=(2, 8))
 
-        body = ttk.PanedWindow(main, orient=tk.HORIZONTAL)
-        body.pack(fill=tk.BOTH, expand=True)
+        workspace = ttk.PanedWindow(main, orient=tk.HORIZONTAL)
+        workspace.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
-        left = ttk.Frame(body, padding=(0, 0, 8, 0))
-        right = ttk.Frame(body)
-        body.add(left, weight=1)
-        body.add(right, weight=1)
+        left_column = ttk.PanedWindow(workspace, orient=tk.VERTICAL)
+        preview = ttk.LabelFrame(workspace, text="PDF Preview", padding=8)
+        workspace.add(left_column, weight=1)
+        workspace.add(preview, weight=2)
 
-        ttk.Label(left, text="Transcript").pack(anchor="w")
-        self.transcript_text = tk.Text(left, wrap=tk.WORD, height=26)
+        transcript_panel = ttk.Frame(left_column, padding=(0, 0, 8, 4))
+        fields_panel = ttk.Frame(left_column, padding=(0, 4, 8, 0))
+        left_column.add(transcript_panel, weight=1)
+        left_column.add(fields_panel, weight=1)
+
+        ttk.Label(transcript_panel, text="Transcript").pack(anchor="w")
+        self.transcript_text = tk.Text(transcript_panel, wrap=tk.WORD, height=12)
         self.transcript_text.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(right, text="PDF Fields and AI Values").pack(anchor="w")
-        self.fields_tree = ttk.Treeview(right, columns=("value",), show="tree headings")
+        ttk.Label(fields_panel, text="PDF Fields and AI Values").pack(anchor="w")
+        self.fields_tree = ttk.Treeview(fields_panel, columns=("value",), show="tree headings")
         self.fields_tree.heading("#0", text="Field")
         self.fields_tree.heading("value", text="Value")
-        self.fields_tree.column("#0", width=260)
-        self.fields_tree.column("value", width=360)
+        self.fields_tree.column("#0", width=220)
+        self.fields_tree.column("value", width=320)
         self.fields_tree.pack(fill=tk.BOTH, expand=True)
         self.fields_tree.bind("<Double-1>", self.edit_selected_value)
+
+        preview_toolbar = ttk.Frame(preview)
+        preview_toolbar.pack(fill=tk.X, pady=(0, 6))
+        ttk.Button(preview_toolbar, text="Previous Page", command=self.previous_page).pack(side=tk.LEFT)
+        ttk.Button(preview_toolbar, text="Next Page", command=self.next_page).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Label(preview_toolbar, textvariable=self.page_status_var).pack(side=tk.LEFT, padx=(12, 0))
+
+        preview_body = ttk.Frame(preview)
+        preview_body.pack(fill=tk.BOTH, expand=True)
+        self.preview_canvas = tk.Canvas(preview_body, background="#f4f4f4")
+        preview_y = ttk.Scrollbar(preview_body, orient=tk.VERTICAL, command=self.preview_canvas.yview)
+        preview_x = ttk.Scrollbar(preview_body, orient=tk.HORIZONTAL, command=self.preview_canvas.xview)
+        self.preview_canvas.configure(yscrollcommand=preview_y.set, xscrollcommand=preview_x.set)
+        self.preview_canvas.bind("<MouseWheel>", self._scroll_preview_with_mousewheel)
+        self.preview_canvas.bind("<Button-4>", self._scroll_preview_with_mousewheel)
+        self.preview_canvas.bind("<Button-5>", self._scroll_preview_with_mousewheel)
+        self.preview_canvas.bind("<Button-1>", self.edit_preview_field)
+        self.preview_canvas.grid(row=0, column=0, sticky="nsew")
+        preview_y.grid(row=0, column=1, sticky="ns")
+        preview_x.grid(row=1, column=0, sticky="ew")
+        preview_body.columnconfigure(0, weight=1)
+        preview_body.rowconfigure(0, weight=1)
 
         ttk.Label(main, textvariable=self.status_var).pack(anchor="w", pady=(8, 0))
 
@@ -115,6 +153,32 @@ class GeminiFormFillerApp:
         if self.api_key_file.exists():
             return self.api_key_file.read_text(encoding="utf-8").strip()
         return ""
+
+    def _scroll_preview_with_mousewheel(self, event) -> str:
+        self.commit_preview_editor()
+        if getattr(event, "num", None) == 4 or getattr(event, "delta", 0) > 0:
+            self.preview_canvas.yview_scroll(-3, "units")
+        else:
+            self.preview_canvas.yview_scroll(3, "units")
+        return "break"
+
+    def edit_preview_field(self, event) -> str:
+        field_name = self._field_at_preview_position(event.x, event.y)
+        if field_name:
+            self.start_inline_preview_edit(field_name)
+        else:
+            self.commit_preview_editor()
+        return "break"
+
+    def _field_at_preview_position(self, canvas_x: int, canvas_y: int) -> str | None:
+        page_x = self.preview_canvas.canvasx(canvas_x) / self.preview_zoom
+        page_y = self.preview_canvas.canvasy(canvas_y) / self.preview_zoom
+
+        for field_name, locations in self.pdf_field_locations.items():
+            for page_index, rect in locations:
+                if page_index == self.current_page_index and rect.contains(fitz.Point(page_x, page_y)):
+                    return field_name
+        return None
 
     def save_api_key(self) -> None:
         self.api_key_file.write_text(self.api_key_var.get().strip(), encoding="utf-8")
@@ -171,10 +235,167 @@ class GeminiFormFillerApp:
             return
 
         self.pdf_path = Path(path)
+        self.pdf_document = fitz.open(path)
         self.pdf_fields = fields
-        self.field_values = {field_name: "" for field_name in fields}
+        self.pdf_widget_values = {}
+        self.pdf_field_locations = self._read_pdf_field_locations()
+        for field_name in self.pdf_field_locations:
+            self.pdf_fields.setdefault(field_name, {})
+        self.field_values = {field_name: self._initial_pdf_field_value(field_name, details) for field_name, details in self.pdf_fields.items()}
+        self.current_page_index = 0
         self.pdf_status_var.set(f"Loaded PDF: {self.pdf_path.name} ({len(fields)} fields)")
         self.refresh_fields_tree()
+        self.render_current_page()
+
+    def _initial_pdf_field_value(self, field_name: str, details: dict) -> str:
+        widget_value = self.pdf_widget_values.get(field_name, "")
+        if widget_value:
+            return widget_value
+
+        value = self._clean_pdf_value(details.get("/V", ""))
+        if value:
+            return value
+
+        return ""
+
+    def _clean_pdf_value(self, value) -> str:
+        if value in (None, ""):
+            return ""
+        text = str(value)
+        if text.startswith("/"):
+            text = text[1:]
+        return text
+
+    def _read_pdf_field_locations(self) -> dict[str, list[tuple[int, fitz.Rect]]]:
+        locations: dict[str, list[tuple[int, fitz.Rect]]] = {}
+        if self.pdf_document is None:
+            return locations
+
+        for page_index, page in enumerate(self.pdf_document):
+            for widget in page.widgets() or []:
+                if not widget.field_name:
+                    continue
+                locations.setdefault(widget.field_name, []).append((page_index, fitz.Rect(widget.rect)))
+                widget_value = self._clean_pdf_value(getattr(widget, "field_value", ""))
+                if widget_value and not self.pdf_widget_values.get(widget.field_name):
+                    self.pdf_widget_values[widget.field_name] = widget_value
+        return locations
+
+    def previous_page(self) -> None:
+        if self.pdf_document is None or self.current_page_index <= 0:
+            return
+        self.commit_preview_editor()
+        self.current_page_index -= 1
+        self.render_current_page()
+
+    def next_page(self) -> None:
+        if self.pdf_document is None or self.current_page_index >= self.pdf_document.page_count - 1:
+            return
+        self.commit_preview_editor()
+        self.current_page_index += 1
+        self.render_current_page()
+
+    def render_current_page(self) -> None:
+        self.clear_preview_editor()
+        self.preview_canvas.delete("all")
+        if self.pdf_document is None:
+            self.page_status_var.set("No page loaded")
+            return
+
+        page = self.pdf_document[self.current_page_index]
+        matrix = fitz.Matrix(self.preview_zoom, self.preview_zoom)
+        pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+        self.preview_image = tk.PhotoImage(data=pixmap.tobytes("png"))
+        self.preview_canvas.create_image(0, 0, anchor=tk.NW, image=self.preview_image)
+        self.preview_canvas.configure(scrollregion=(0, 0, pixmap.width, pixmap.height))
+        self.page_status_var.set(f"Page {self.current_page_index + 1} of {self.pdf_document.page_count}")
+
+        for field_name, locations in self.pdf_field_locations.items():
+            for page_index, rect in locations:
+                if page_index != self.current_page_index:
+                    continue
+                self._draw_field_overlay(field_name, rect)
+
+    def _draw_field_overlay(self, field_name: str, rect: fitz.Rect) -> None:
+        x0 = rect.x0 * self.preview_zoom
+        y0 = rect.y0 * self.preview_zoom
+        x1 = rect.x1 * self.preview_zoom
+        y1 = rect.y1 * self.preview_zoom
+        value = self.field_values.get(field_name, "")
+        outline = "#2d6cdf" if value else "#c46a00"
+        fill = "#eaf2ff" if value else "#fff6e8"
+        self.preview_canvas.create_rectangle(x0, y0, x1, y1, outline=outline, width=2)
+        if value:
+            self.preview_canvas.create_rectangle(x0 + 1, y0 + 1, x1 - 1, y1 - 1, fill=fill, outline="")
+            self.preview_canvas.create_text(
+                x0 + 4,
+                y0 + 3,
+                anchor=tk.NW,
+                text=value,
+                fill="#111111",
+                width=max(20, int(x1 - x0 - 8)),
+            )
+
+    def start_inline_preview_edit(self, field_name: str) -> None:
+        self.commit_preview_editor()
+        rect = self._field_rect_on_current_page(field_name)
+        if rect is None:
+            return
+
+        x0 = rect.x0 * self.preview_zoom
+        y0 = rect.y0 * self.preview_zoom
+        x1 = rect.x1 * self.preview_zoom
+        y1 = rect.y1 * self.preview_zoom
+        editor = ttk.Entry(self.preview_canvas)
+        editor.insert(0, self.field_values.get(field_name, ""))
+        editor.icursor(tk.END)
+        editor.bind("<Return>", lambda _event: self.commit_preview_editor())
+        editor.bind("<Escape>", lambda _event: self.clear_preview_editor())
+        editor.bind("<FocusOut>", lambda _event: self.commit_preview_editor())
+
+        self.preview_editor = editor
+        self.preview_editor_field = field_name
+        self.preview_editor_window = self.preview_canvas.create_window(
+            x0 + 2,
+            y0 + 2,
+            anchor=tk.NW,
+            window=editor,
+            width=max(24, int(x1 - x0 - 4)),
+            height=max(22, int(y1 - y0 - 4)),
+        )
+        editor.focus_set()
+
+    def _field_rect_on_current_page(self, field_name: str) -> fitz.Rect | None:
+        for page_index, rect in self.pdf_field_locations.get(field_name, []):
+            if page_index == self.current_page_index:
+                return rect
+        return None
+
+    def commit_preview_editor(self) -> str:
+        if self.preview_editor is None or self.preview_editor_field is None:
+            return "break"
+
+        field_name = self.preview_editor_field
+        self.field_values[field_name] = self.preview_editor.get()
+        self.clear_preview_editor()
+        self.refresh_fields_tree()
+        if self.fields_tree.exists(field_name):
+            self.fields_tree.selection_set(field_name)
+            self.fields_tree.see(field_name)
+        self.render_current_page()
+        return "break"
+
+    def clear_preview_editor(self) -> str:
+        editor = self.preview_editor
+        editor_window = self.preview_editor_window
+        self.preview_editor = None
+        self.preview_editor_window = None
+        self.preview_editor_field = None
+        if editor_window is not None:
+            self.preview_canvas.delete(editor_window)
+        if editor is not None:
+            editor.destroy()
+        return "break"
 
     def refresh_fields_tree(self) -> None:
         self.fields_tree.delete(*self.fields_tree.get_children())
@@ -185,13 +406,20 @@ class GeminiFormFillerApp:
         selected = self.fields_tree.selection()
         if not selected:
             return
-        field_name = selected[0]
+        self.edit_field_value(selected[0])
+
+    def edit_field_value(self, field_name: str) -> None:
+        self.commit_preview_editor()
         current_value = self.field_values.get(field_name, "")
         new_value = simpledialog.askstring("Edit field value", field_name, initialvalue=current_value)
         if new_value is None:
             return
         self.field_values[field_name] = new_value
         self.refresh_fields_tree()
+        if self.fields_tree.exists(field_name):
+            self.fields_tree.selection_set(field_name)
+            self.fields_tree.see(field_name)
+        self.render_current_page()
 
     def start_recording(self) -> None:
         if self.recording or self.is_busy:
@@ -341,6 +569,7 @@ class GeminiFormFillerApp:
         self.is_busy = False
         self.field_values.update(values)
         self.refresh_fields_tree()
+        self.render_current_page()
         self.status_var.set("AI values ready for review. Double-click a value to edit it.")
 
     def export_filled_pdf(self) -> None:
