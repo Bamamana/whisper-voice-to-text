@@ -30,6 +30,8 @@ dist/*
 !dist/windows-installer/WhisperVoiceToTextSetup.exe
 !dist/windows-installer-v2/
 !dist/windows-installer-v2/WhisperVoiceToFormV2Setup.exe
+!dist/windows-installer-v3/
+!dist/windows-installer-v3/WhisperVoiceToFormV3Setup.exe
 .cache/
 tools/ffmpeg/
 desktop-launch.log

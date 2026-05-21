@@ -1,0 +1,6 @@
+faster-whisper
+google-genai
+numpy
+PyMuPDF
+pypdf
+sounddevice
