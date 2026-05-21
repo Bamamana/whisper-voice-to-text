@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import shutil
 import tempfile
 import threading
 import wave
 import webbrowser
+from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import quote
@@ -26,13 +28,14 @@ from pypdf.generic import BooleanObject, NameObject
 
 DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.compose"]
+MATTER_PROFILE_FILENAME = ".whisper-v4-profile.json"
 
 
 class GeminiFormFillerApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Whisper Voice To Form - V3")
-        self.root.geometry("1200x760")
+        self.root.title("Whisper Voice To Form - V4 Legal Assistant")
+        self.root.geometry("1320x820")
 
         self.app_dir = Path(__file__).resolve().parent
         self.api_key_file = self.app_dir / ".gemini-api-key"
@@ -40,8 +43,10 @@ class GeminiFormFillerApp:
         self.gmail_token_file = self.app_dir / ".gmail-token.json"
         self.model_cache_dir = self.app_dir / "model-cache"
         self.templates_dir = self.app_dir / "templates"
+        self.matter_profiles_dir = self.app_dir / "matter-profiles"
         self.model_cache_dir.mkdir(exist_ok=True)
         self.templates_dir.mkdir(exist_ok=True)
+        self.matter_profiles_dir.mkdir(exist_ok=True)
 
         self.pdf_path: Path | None = None
         self.pdf_document: fitz.Document | None = None
@@ -74,9 +79,26 @@ class GeminiFormFillerApp:
         self.email_cc_var = tk.StringVar(value="")
         self.email_bcc_var = tk.StringVar(value="")
         self.email_subject_var = tk.StringVar(value="")
+        self.matter_profile_var = tk.StringVar(value="")
+        self.client_name_var = tk.StringVar(value="")
+        self.matter_number_var = tk.StringVar(value="")
+        self.court_var = tk.StringVar(value="")
+        self.opposing_party_var = tk.StringVar(value="")
+        self.dropbox_parent_path_var = tk.StringVar(value="")
+        self.file_group_path_var = tk.StringVar(value="")
+        self.accessibility_mode_var = tk.BooleanVar(value=False)
+        self.collapsed_panels: set[str] = set()
+        self.panel_button_vars = {
+            "matter": tk.StringVar(value="[v] Matter"),
+            "legal": tk.StringVar(value="[v] Legal Tools"),
+            "email": tk.StringVar(value="[v] Email"),
+            "fields": tk.StringVar(value="[v] PDF Fields"),
+        }
 
         self._build_ui()
+        self._bind_accessibility_shortcuts()
         self.refresh_template_choices()
+        self.refresh_matter_profiles()
 
     def _build_ui(self) -> None:
         main = ttk.Frame(self.root, padding=12)
@@ -90,6 +112,7 @@ class GeminiFormFillerApp:
         api_entry.grid(row=0, column=1, sticky="ew", padx=(8, 6))
         ttk.Button(settings, text="Save Key", command=self.save_api_key).grid(row=0, column=2)
         ttk.Button(settings, text="Test Key", command=self.test_api_key).grid(row=0, column=3, padx=(6, 0))
+        ttk.Checkbutton(settings, text="Large Controls", variable=self.accessibility_mode_var, command=self.toggle_accessibility_mode).grid(row=0, column=4, padx=(10, 0))
 
         ttk.Label(settings, text="Gemini model").grid(row=1, column=0, sticky="w", pady=(8, 0))
         ttk.Entry(settings, textvariable=self.gemini_model_var, width=28).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
@@ -121,9 +144,12 @@ class GeminiFormFillerApp:
         ttk.Button(recording_actions, text="Start Recording", command=self.start_recording).pack(side=tk.LEFT)
         ttk.Button(recording_actions, text="Stop and Transcribe", command=self.stop_recording).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(recording_actions, text="Fix Grammar / Whisper Text", command=lambda: self.rewrite_transcript_with_gemini("grammar")).pack(side=tk.LEFT, padx=(16, 0))
+        ttk.Button(recording_actions, text="Formal Legal Tone", command=lambda: self.create_legal_work_product("formal_tone")).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(recording_actions, text="Make Email", command=lambda: self.rewrite_transcript_with_gemini("email")).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(recording_actions, text="Shortcut Help", command=self.show_command_help).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(recording_actions, text="Send Transcript To PDF", command=self.send_transcript_to_ai).pack(side=tk.LEFT, padx=(16, 0))
         ttk.Button(recording_actions, text="Export Filled PDF", command=self.export_filled_pdf).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(recording_actions, text="Update Original PDF", command=self.update_original_pdf).pack(side=tk.LEFT, padx=(8, 0))
 
         ttk.Label(main, textvariable=self.pdf_status_var).pack(anchor="w")
         ttk.Label(main, textvariable=self.recording_status_var).pack(anchor="w", pady=(2, 8))
@@ -132,20 +158,95 @@ class GeminiFormFillerApp:
         workspace.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
         left_column = ttk.PanedWindow(workspace, orient=tk.VERTICAL)
+        self.left_column = left_column
         preview = ttk.LabelFrame(workspace, text="PDF Preview", padding=8)
         workspace.add(left_column, weight=1)
         workspace.add(preview, weight=2)
 
         transcript_panel = ttk.Frame(left_column, padding=(0, 0, 8, 4))
+        matter_panel = ttk.LabelFrame(left_column, text="Client / Matter Profile", padding=(0, 4, 8, 4))
+        legal_panel = ttk.LabelFrame(left_column, text="Legal Work Product", padding=(0, 4, 8, 4))
         email_panel = ttk.LabelFrame(left_column, text="Email Draft", padding=(0, 4, 8, 4))
         fields_panel = ttk.Frame(left_column, padding=(0, 4, 8, 0))
         left_column.add(transcript_panel, weight=1)
+        left_column.add(matter_panel, weight=0)
+        left_column.add(legal_panel, weight=1)
         left_column.add(email_panel, weight=1)
         left_column.add(fields_panel, weight=1)
 
-        ttk.Label(transcript_panel, text="Transcript").pack(anchor="w")
+        transcript_header = ttk.Frame(transcript_panel)
+        transcript_header.pack(fill=tk.X)
+        ttk.Label(transcript_header, text="Transcript").pack(side=tk.LEFT)
+        ttk.Button(transcript_header, text="Copy", command=self.copy_transcript).pack(side=tk.LEFT, padx=(8, 0))
+
+        panel_toggles = ttk.Frame(transcript_panel)
+        panel_toggles.pack(fill=tk.X, pady=(6, 0))
+        ttk.Button(panel_toggles, textvariable=self.panel_button_vars["matter"], command=lambda: self.toggle_panel("matter")).pack(side=tk.LEFT)
+        ttk.Button(panel_toggles, textvariable=self.panel_button_vars["legal"], command=lambda: self.toggle_panel("legal")).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(panel_toggles, textvariable=self.panel_button_vars["email"], command=lambda: self.toggle_panel("email")).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(panel_toggles, textvariable=self.panel_button_vars["fields"], command=lambda: self.toggle_panel("fields")).pack(side=tk.LEFT, padx=(6, 0))
+
         self.transcript_text = tk.Text(transcript_panel, wrap=tk.WORD, height=12)
-        self.transcript_text.pack(fill=tk.BOTH, expand=True)
+        self.transcript_text.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
+
+        self.collapsible_panes = {
+            "matter": (matter_panel, 0),
+            "legal": (legal_panel, 1),
+            "email": (email_panel, 1),
+            "fields": (fields_panel, 1),
+        }
+
+        matter_fields = ttk.Frame(matter_panel)
+        matter_fields.pack(fill=tk.X)
+        ttk.Label(matter_fields, text="Client").grid(row=0, column=0, sticky="w")
+        ttk.Entry(matter_fields, textvariable=self.client_name_var).grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        ttk.Label(matter_fields, text="Matter #").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        ttk.Entry(matter_fields, textvariable=self.matter_number_var, width=18).grid(row=0, column=3, sticky="ew", padx=(6, 0))
+        ttk.Label(matter_fields, text="Court").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Entry(matter_fields, textvariable=self.court_var).grid(row=1, column=1, sticky="ew", padx=(6, 0), pady=(4, 0))
+        ttk.Label(matter_fields, text="Opposing").grid(row=1, column=2, sticky="w", padx=(8, 0), pady=(4, 0))
+        ttk.Entry(matter_fields, textvariable=self.opposing_party_var, width=18).grid(row=1, column=3, sticky="ew", padx=(6, 0), pady=(4, 0))
+        ttk.Label(matter_fields, text="Saved").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.matter_profile_combo = ttk.Combobox(matter_fields, textvariable=self.matter_profile_var, state="readonly")
+        self.matter_profile_combo.grid(row=2, column=1, sticky="ew", padx=(6, 0), pady=(6, 0))
+        ttk.Button(matter_fields, text="Load", command=self.load_selected_matter_profile).grid(row=2, column=2, sticky="ew", padx=(8, 0), pady=(6, 0))
+        profile_buttons = ttk.Frame(matter_fields)
+        profile_buttons.grid(row=2, column=3, sticky="ew", padx=(6, 0), pady=(6, 0))
+        ttk.Button(profile_buttons, text="Extract From Transcript", command=self.extract_matter_profile_from_transcript).pack(side=tk.LEFT)
+        ttk.Button(profile_buttons, text="Save Profile", command=self.save_current_matter_profile).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Label(matter_fields, text="Dropbox Parent").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(matter_fields, textvariable=self.dropbox_parent_path_var).grid(row=3, column=1, sticky="ew", padx=(6, 0), pady=(6, 0))
+        ttk.Button(matter_fields, text="Choose Parent", command=self.select_dropbox_parent_folder).grid(row=3, column=2, sticky="ew", padx=(8, 0), pady=(6, 0))
+        ttk.Button(matter_fields, text="Refresh", command=self.refresh_dropbox_matter_folders).grid(row=3, column=3, sticky="w", padx=(6, 0), pady=(6, 0))
+        ttk.Label(matter_fields, text="Matter Folder").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        self.dropbox_folder_combo = ttk.Combobox(matter_fields, state="readonly")
+        self.dropbox_folder_combo.grid(row=4, column=1, sticky="ew", padx=(6, 0), pady=(6, 0))
+        self.dropbox_folder_combo.bind("<<ComboboxSelected>>", lambda _event: self.load_selected_dropbox_matter_folder())
+        ttk.Button(matter_fields, text="Load Folder", command=self.load_selected_dropbox_matter_folder).grid(row=4, column=2, sticky="ew", padx=(8, 0), pady=(6, 0))
+        ttk.Button(matter_fields, text="Open Selected", command=self.open_selected_matter_file).grid(row=4, column=3, sticky="w", padx=(6, 0), pady=(6, 0))
+        ttk.Label(matter_fields, text="File Folder").grid(row=5, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(matter_fields, textvariable=self.file_group_path_var).grid(row=5, column=1, sticky="ew", padx=(6, 0), pady=(6, 0))
+        ttk.Button(matter_fields, text="Choose Folder", command=self.select_matter_file_group).grid(row=5, column=2, sticky="ew", padx=(8, 0), pady=(6, 0))
+        file_list_frame = ttk.Frame(matter_fields)
+        file_list_frame.grid(row=6, column=0, columnspan=4, sticky="nsew", pady=(4, 0))
+        self.matter_files_listbox = tk.Listbox(file_list_frame, height=4)
+        matter_files_scrollbar = ttk.Scrollbar(file_list_frame, orient=tk.VERTICAL, command=self.matter_files_listbox.yview)
+        self.matter_files_listbox.configure(yscrollcommand=matter_files_scrollbar.set)
+        self.matter_files_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        matter_files_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.matter_files_listbox.bind("<Double-1>", lambda _event: self.open_selected_matter_file())
+        matter_fields.columnconfigure(1, weight=1)
+        matter_fields.columnconfigure(3, weight=1)
+
+        legal_buttons = ttk.Frame(legal_panel)
+        legal_buttons.pack(fill=tk.X)
+        ttk.Button(legal_buttons, text="Attorney Notes", command=lambda: self.create_legal_work_product("attorney_notes")).pack(side=tk.LEFT)
+        ttk.Button(legal_buttons, text="Billing Entry", command=lambda: self.create_legal_work_product("billing_entry")).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(legal_buttons, text="Timeline", command=lambda: self.create_legal_work_product("timeline")).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(legal_buttons, text="Client Letter", command=lambda: self.create_legal_work_product("client_letter")).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(legal_buttons, text="Checklist", command=lambda: self.create_legal_work_product("checklist")).pack(side=tk.LEFT, padx=(6, 0))
+        self.legal_output_text = tk.Text(legal_panel, wrap=tk.WORD, height=8)
+        self.legal_output_text.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
 
         email_fields = ttk.Frame(email_panel)
         email_fields.pack(fill=tk.X)
@@ -205,6 +306,287 @@ class GeminiFormFillerApp:
         if self.api_key_file.exists():
             return self.api_key_file.read_text(encoding="utf-8").strip()
         return ""
+
+    def _bind_accessibility_shortcuts(self) -> None:
+        shortcuts = {
+            "<F5>": lambda _event: self.start_recording(),
+            "<F6>": lambda _event: self.stop_recording(),
+            "<F7>": lambda _event: self.rewrite_transcript_with_gemini("email"),
+            "<F8>": lambda _event: self.send_transcript_to_ai(),
+            "<F9>": lambda _event: self.export_filled_pdf(),
+            "<F10>": lambda _event: self.update_original_pdf(),
+            "<Control-l>": lambda _event: self._toggle_large_controls_shortcut(),
+            "<Control-m>": lambda _event: self._focus_transcript(),
+            "<Control-h>": lambda _event: self.show_command_help(),
+            "<Alt-Left>": lambda _event: self.previous_page(),
+            "<Alt-Right>": lambda _event: self.next_page(),
+        }
+        for sequence, command in shortcuts.items():
+            self.root.bind(sequence, command)
+
+    def _toggle_large_controls_shortcut(self) -> None:
+        self.accessibility_mode_var.set(not self.accessibility_mode_var.get())
+        self.toggle_accessibility_mode()
+
+    def _focus_transcript(self) -> None:
+        self.transcript_text.focus_set()
+        self.status_var.set("Transcript box focused")
+
+    def copy_transcript(self) -> None:
+        transcript = self.transcript_text.get("1.0", tk.END).strip()
+        if not transcript:
+            messagebox.showerror("Nothing to copy", "The transcript box is empty.")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(transcript)
+        self.status_var.set("Transcript copied to clipboard")
+
+    def toggle_panel(self, panel_name: str) -> None:
+        if panel_name in self.collapsed_panels:
+            self.collapsed_panels.remove(panel_name)
+        else:
+            self.collapsed_panels.add(panel_name)
+        self._refresh_collapsible_panels()
+
+    def _refresh_collapsible_panels(self) -> None:
+        panel_labels = {
+            "matter": ("[>] Matter", "[v] Matter"),
+            "legal": ("[>] Legal Tools", "[v] Legal Tools"),
+            "email": ("[>] Email", "[v] Email"),
+            "fields": ("[>] PDF Fields", "[v] PDF Fields"),
+        }
+
+        for panel_name, (show_label, hide_label) in panel_labels.items():
+            self.panel_button_vars[panel_name].set(show_label if panel_name in self.collapsed_panels else hide_label)
+
+        for pane, _weight in self.collapsible_panes.values():
+            try:
+                self.left_column.forget(pane)
+            except tk.TclError:
+                pass
+
+        for panel_name in ("matter", "legal", "email", "fields"):
+            if panel_name in self.collapsed_panels:
+                continue
+            pane, weight = self.collapsible_panes[panel_name]
+            self.left_column.add(pane, weight=weight)
+
+        hidden_count = len(self.collapsed_panels)
+        self.status_var.set(f"{hidden_count} panel{'s' if hidden_count != 1 else ''} collapsed")
+
+    def select_matter_file_group(self) -> None:
+        folder = filedialog.askdirectory(title="Choose matter file folder")
+        if not folder:
+            return
+        self.file_group_path_var.set(folder)
+        self.apply_profile_from_folder(Path(folder))
+        self.refresh_matter_files()
+        self.status_var.set(f"Matter file folder selected: {folder}")
+
+    def select_dropbox_parent_folder(self) -> None:
+        folder = filedialog.askdirectory(title="Choose parent Dropbox/client folder")
+        if not folder:
+            return
+        self.dropbox_parent_path_var.set(folder)
+        self.refresh_dropbox_matter_folders()
+        self.status_var.set(f"Dropbox parent selected: {folder}")
+
+    def refresh_dropbox_matter_folders(self) -> None:
+        if not hasattr(self, "dropbox_folder_combo"):
+            return
+        parent_text = self.dropbox_parent_path_var.get().strip()
+        if not parent_text:
+            self.dropbox_folder_combo.configure(values=[])
+            return
+        parent = Path(parent_text)
+        if not parent.exists() or not parent.is_dir():
+            messagebox.showerror("Missing parent folder", "Choose an existing Dropbox parent folder first.")
+            return
+
+        folders = []
+        for path in sorted(parent.iterdir(), key=lambda item: item.name.lower()):
+            if path.is_dir() and not path.name.startswith("."):
+                folders.append(path.name)
+
+        self.dropbox_folder_combo.configure(values=folders)
+        if folders:
+            self.dropbox_folder_combo.set(folders[0])
+        else:
+            self.dropbox_folder_combo.set("")
+        self.status_var.set(f"Found {len(folders)} matter folder{'s' if len(folders) != 1 else ''}")
+
+    def load_selected_dropbox_matter_folder(self) -> None:
+        parent_text = self.dropbox_parent_path_var.get().strip()
+        folder_name = self.dropbox_folder_combo.get().strip() if hasattr(self, "dropbox_folder_combo") else ""
+        if not parent_text or not folder_name:
+            messagebox.showerror("Missing folder", "Choose a Dropbox parent folder and a matter folder first.")
+            return
+
+        folder = Path(parent_text) / folder_name
+        if not folder.exists() or not folder.is_dir():
+            messagebox.showerror("Missing folder", f"This matter folder was not found:\n{folder}")
+            self.refresh_dropbox_matter_folders()
+            return
+
+        self.load_matter_folder(folder)
+
+    def load_matter_folder(self, folder: Path) -> None:
+        self.file_group_path_var.set(str(folder))
+        saved_profile = self.load_profile_from_matter_folder(folder)
+        if saved_profile:
+            self._apply_matter_profile(saved_profile)
+            self.file_group_path_var.set(str(folder))
+            self.status_var.set(f"Loaded Dropbox profile from: {folder.name}")
+        else:
+            self._apply_matter_profile(self.infer_profile_from_folder(folder), preserve_existing=False)
+            self.file_group_path_var.set(str(folder))
+            self.status_var.set(f"Loaded matter folder and inferred profile: {folder.name}")
+        self.refresh_matter_files()
+
+    def load_profile_from_matter_folder(self, folder: Path) -> dict | None:
+        profile_path = folder / MATTER_PROFILE_FILENAME
+        if not profile_path.exists():
+            return None
+        try:
+            data = json.loads(profile_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            messagebox.showwarning("Profile read failed", f"Could not read Dropbox profile file:\n{profile_path}\n\n{exc}")
+            return None
+        return data if isinstance(data, dict) else None
+
+    def save_profile_to_matter_folder(self) -> Path:
+        folder_text = self.file_group_path_var.get().strip()
+        if not folder_text:
+            raise RuntimeError("Choose or load a Dropbox matter folder before saving the profile.")
+        folder = Path(folder_text)
+        if not folder.exists() or not folder.is_dir():
+            raise RuntimeError(f"The active matter folder does not exist:\n{folder}")
+
+        data = self._current_matter_profile()
+        data["file_group_path"] = str(folder)
+        if not data.get("dropbox_parent_path") and folder.parent.exists():
+            data["dropbox_parent_path"] = str(folder.parent)
+        profile_path = folder / MATTER_PROFILE_FILENAME
+        profile_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        return profile_path
+
+    def apply_profile_from_folder(self, folder: Path) -> None:
+        profile = self.infer_profile_from_folder(folder)
+        self._apply_matter_profile(profile, preserve_existing=True)
+
+    def infer_profile_from_folder(self, folder: Path) -> dict[str, str]:
+        name = folder.name.strip()
+        parts = [part.strip(" -_") for part in name.replace("_", " ").split(" - ") if part.strip(" -_")]
+        matter_number = ""
+        client_name = ""
+        opposing_party = ""
+        court = ""
+
+        for part in parts:
+            lowered = part.lower()
+            if not matter_number and any(char.isdigit() for char in part) and any(token in lowered for token in ("matter", "case", "#")):
+                matter_number = part.replace("Matter", "").replace("matter", "").replace("Case", "").replace("case", "").replace("#", "").strip(" -_:")
+            elif not court and "court" in lowered:
+                court = part
+            elif not opposing_party and lowered.startswith(("v ", "vs ", "versus ")):
+                opposing_party = part.split(" ", 1)[-1].strip()
+            elif not client_name:
+                client_name = part
+
+        if not client_name:
+            cleaned = name.replace("_", " ")
+            for separator in (" - ", "_", "|"):
+                if separator in cleaned:
+                    cleaned = cleaned.split(separator, 1)[0]
+                    break
+            client_name = cleaned.strip(" -_")
+
+        return {
+            "client_name": client_name,
+            "matter_number": matter_number,
+            "court": court,
+            "opposing_party": opposing_party,
+        }
+
+    def refresh_matter_files(self) -> None:
+        if not hasattr(self, "matter_files_listbox"):
+            return
+        self.matter_files_listbox.delete(0, tk.END)
+        folder_text = self.file_group_path_var.get().strip()
+        if not folder_text:
+            return
+        folder = Path(folder_text)
+        if not folder.exists() or not folder.is_dir():
+            return
+
+        allowed_suffixes = {".doc", ".docx", ".pdf", ".txt", ".rtf", ".xlsx", ".xls", ".csv"}
+        for path in sorted(folder.iterdir(), key=lambda item: item.name.lower()):
+            if path.is_file() and path.suffix.lower() in allowed_suffixes:
+                self.matter_files_listbox.insert(tk.END, path.name)
+
+    def open_selected_matter_file(self) -> None:
+        folder_text = self.file_group_path_var.get().strip()
+        if not folder_text:
+            messagebox.showerror("Missing folder", "Choose a matter file folder first.")
+            return
+        selected = self.matter_files_listbox.curselection() if hasattr(self, "matter_files_listbox") else ()
+        if not selected:
+            messagebox.showerror("No file selected", "Select a document from the matter file list first.")
+            return
+
+        file_path = Path(folder_text) / self.matter_files_listbox.get(selected[0])
+        if not file_path.exists():
+            messagebox.showerror("Missing file", f"This file no longer exists:\n{file_path}")
+            self.refresh_matter_files()
+            return
+        if file_path.suffix.lower() == ".pdf":
+            self.open_pdf_from_matter_folder(file_path)
+            return
+        try:
+            os.startfile(file_path)
+            self.status_var.set(f"Opened matter file: {file_path.name}")
+        except Exception as exc:
+            messagebox.showerror("Open file failed", str(exc))
+
+    def open_pdf_from_matter_folder(self, file_path: Path) -> None:
+        try:
+            reader = PdfReader(str(file_path))
+            fields = reader.get_fields() or {}
+        except Exception as exc:
+            messagebox.showerror("PDF error", str(exc))
+            return
+
+        if fields:
+            self.load_pdf(file_path)
+            self.status_var.set(f"Loaded matter PDF in V4: {file_path.name}")
+            return
+
+        should_prepare = messagebox.askyesno(
+            "Flat PDF selected",
+            "This PDF does not have fillable fields yet.\n\nDo you want V4 to auto-prepare a reusable fillable template from it?",
+        )
+        if not should_prepare:
+            self.status_var.set(f"Selected flat PDF was not loaded: {file_path.name}")
+            return
+
+        output_path = self.templates_dir / f"{file_path.stem}-auto-template.pdf"
+        try:
+            field_count = self._create_fillable_template_from_flat_pdf(file_path, output_path)
+        except Exception as exc:
+            messagebox.showerror("Auto-prepare failed", str(exc))
+            return
+
+        if field_count == 0:
+            messagebox.showwarning(
+                "No fields detected",
+                "No obvious blank lines or checkbox squares were detected. This PDF may need manual preparation in Adobe Acrobat.",
+            )
+            return
+
+        self.refresh_template_choices()
+        self.template_var.set(output_path.name)
+        self.load_pdf(output_path)
+        self.status_var.set(f"Auto-prepared and loaded matter PDF: {output_path.name}")
 
     def _scroll_preview_with_mousewheel(self, event) -> str:
         self.commit_preview_editor()
@@ -311,6 +693,142 @@ class GeminiFormFillerApp:
             self.template_var.set(templates[0])
         elif not templates:
             self.template_var.set("")
+
+    def refresh_matter_profiles(self) -> None:
+        profiles = sorted(path.name for path in self.matter_profiles_dir.glob("*.json"))
+        if hasattr(self, "matter_profile_combo"):
+            self.matter_profile_combo.configure(values=profiles)
+        if profiles and self.matter_profile_var.get() not in profiles:
+            self.matter_profile_var.set(profiles[0])
+        elif not profiles:
+            self.matter_profile_var.set("")
+
+    def load_selected_matter_profile(self) -> None:
+        folder_text = self.file_group_path_var.get().strip()
+        if folder_text:
+            folder = Path(folder_text)
+            if folder.exists() and folder.is_dir():
+                profile = self.load_profile_from_matter_folder(folder)
+                if profile:
+                    self._apply_matter_profile(profile)
+                    self.file_group_path_var.set(str(folder))
+                    self.refresh_matter_files()
+                    self.status_var.set(f"Loaded Dropbox folder profile: {folder.name}")
+                    return
+
+        profile_name = self.matter_profile_var.get()
+        if not profile_name:
+            messagebox.showerror("No profile", "No Dropbox profile exists in the active matter folder, and no local saved profile is selected.")
+            return
+        try:
+            data = json.loads((self.matter_profiles_dir / profile_name).read_text(encoding="utf-8"))
+        except Exception as exc:
+            messagebox.showerror("Profile load failed", str(exc))
+            return
+
+        self._apply_matter_profile(data)
+        self.refresh_matter_files()
+        self.status_var.set(f"Matter profile loaded: {profile_name}")
+
+    def save_current_matter_profile(self) -> None:
+        data = self._current_matter_profile()
+        if not any(data.values()):
+            messagebox.showerror("Empty profile", "Enter or extract at least one client/matter detail before saving.")
+            return
+
+        folder_text = self.file_group_path_var.get().strip()
+        if folder_text:
+            try:
+                profile_path = self.save_profile_to_matter_folder()
+            except Exception as exc:
+                messagebox.showerror("Dropbox profile save failed", str(exc))
+                return
+            self.status_var.set(f"Matter profile saved in Dropbox folder: {profile_path.name}")
+            return
+
+        default_name = " - ".join(part for part in (data["client_name"], data["matter_number"]) if part) or "matter-profile"
+        profile_name = simpledialog.askstring("Save matter profile", "Profile name", initialvalue=default_name)
+        if not profile_name:
+            return
+        safe_name = "".join(char if char.isalnum() or char in "-_ ." else "_" for char in profile_name).strip()
+        if not safe_name:
+            return
+        if not safe_name.lower().endswith(".json"):
+            safe_name += ".json"
+
+        output_path = self.matter_profiles_dir / safe_name
+        output_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        self.refresh_matter_profiles()
+        self.matter_profile_var.set(output_path.name)
+        self.status_var.set(f"Matter profile saved: {output_path.name}")
+
+    def extract_matter_profile_from_transcript(self) -> None:
+        if self.is_busy:
+            return
+        if not self.api_key_var.get().strip():
+            messagebox.showerror("Missing API key", "Enter your Google AI Studio API key first.")
+            return
+
+        transcript = self.transcript_text.get("1.0", tk.END).strip()
+        if not transcript:
+            messagebox.showerror("Missing transcript", "Record or type a transcript first.")
+            return
+
+        self.is_busy = True
+        self.status_var.set("Extracting client/matter profile with Gemini")
+        threading.Thread(target=self._extract_matter_profile_worker, args=(transcript,), daemon=True).start()
+
+    def _extract_matter_profile_worker(self, transcript: str) -> None:
+        try:
+            prompt = (
+                "Extract client and matter profile details from this legal dictation. "
+                "Return strict JSON only with this exact shape: "
+                "{\"client_name\":\"\",\"matter_number\":\"\",\"court\":\"\",\"opposing_party\":\"\"}. "
+                "Use empty strings for anything not clearly stated. Do not invent details.\n\n"
+                f"Transcript:\n{transcript}"
+            )
+            client = genai.Client(api_key=self.api_key_var.get().strip())
+            response = client.models.generate_content(
+                model=self.gemini_model_var.get().strip() or DEFAULT_GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+            profile = self._parse_json_response(response.text or "")
+            self.root.after(0, self._matter_profile_extracted, profile)
+        except Exception as exc:
+            self.root.after(0, self._task_failed, "Matter profile extraction failed", str(exc))
+
+    def _matter_profile_extracted(self, profile: dict) -> None:
+        self.is_busy = False
+        self._apply_matter_profile(profile)
+        self.status_var.set("Matter profile extracted. Review it, then click Save Profile if you want to reuse it.")
+
+    def _current_matter_profile(self) -> dict[str, str]:
+        return {
+            "client_name": self.client_name_var.get().strip(),
+            "matter_number": self.matter_number_var.get().strip(),
+            "court": self.court_var.get().strip(),
+            "opposing_party": self.opposing_party_var.get().strip(),
+            "dropbox_parent_path": self.dropbox_parent_path_var.get().strip(),
+            "file_group_path": self.file_group_path_var.get().strip(),
+        }
+
+    def _apply_matter_profile(self, profile: dict, preserve_existing: bool = False) -> None:
+        fields = [
+            (self.client_name_var, "client_name"),
+            (self.matter_number_var, "matter_number"),
+            (self.court_var, "court"),
+            (self.opposing_party_var, "opposing_party"),
+            (self.dropbox_parent_path_var, "dropbox_parent_path"),
+            (self.file_group_path_var, "file_group_path"),
+        ]
+        for variable, key in fields:
+            value = str(profile.get(key, "") or "")
+            if preserve_existing and variable.get().strip():
+                continue
+            variable.set(value)
+        self.refresh_dropbox_matter_folders()
+        self.refresh_matter_files()
 
     def load_selected_template(self) -> None:
         template_name = self.template_var.get()
@@ -865,6 +1383,191 @@ class GeminiFormFillerApp:
         self.recording_status_var.set("Mic idle")
         self.status_var.set("Transcript ready")
 
+    def toggle_accessibility_mode(self) -> None:
+        enabled = self.accessibility_mode_var.get()
+        scale = 1.25 if enabled else 1.0
+        self.root.tk.call("tk", "scaling", scale)
+        style = ttk.Style(self.root)
+        if enabled:
+            style.configure("TButton", padding=(12, 8))
+            style.configure("TEntry", padding=(6, 4))
+            self.status_var.set("Large controls enabled")
+        else:
+            style.configure("TButton", padding=(6, 3))
+            style.configure("TEntry", padding=(1, 1))
+            self.status_var.set("Large controls disabled")
+
+    def run_voice_command(self) -> None:
+        command = self.transcript_text.get("1.0", tk.END).strip().lower()
+        if not command:
+            messagebox.showerror("Missing command", "Dictate or type a command in the transcript box first.")
+            return
+
+        if "clear transcript" in command:
+            self.transcript_text.delete("1.0", tk.END)
+            self.status_var.set("Transcript cleared")
+        elif "make email" in command or "draft email" in command:
+            self.rewrite_transcript_with_gemini("email")
+        elif "create gmail" in command or "gmail draft" in command:
+            self.create_gmail_draft()
+        elif "connect gmail" in command:
+            self.connect_gmail()
+        elif "fill form" in command or "send transcript" in command:
+            self.send_transcript_to_ai()
+        elif "save pdf" in command or "export pdf" in command:
+            self.export_filled_pdf()
+        elif "update original" in command or "overwrite pdf" in command:
+            self.update_original_pdf()
+        elif "attorney notes" in command or "legal notes" in command:
+            self.create_legal_work_product("attorney_notes")
+        elif "billing" in command or "time entry" in command:
+            self.create_legal_work_product("billing_entry")
+        elif "timeline" in command or "chronology" in command:
+            self.create_legal_work_product("timeline")
+        elif "client letter" in command or "letter" in command:
+            self.create_legal_work_product("client_letter")
+        elif "checklist" in command:
+            self.create_legal_work_product("checklist")
+        elif "formal" in command or "legal tone" in command:
+            self.create_legal_work_product("formal_tone")
+        elif "large controls" in command or "accessibility" in command:
+            self.accessibility_mode_var.set(not self.accessibility_mode_var.get())
+            self.toggle_accessibility_mode()
+        else:
+            messagebox.showinfo(
+                "Command not recognized",
+                "Try commands like: make email, fill form, export PDF, attorney notes, billing entry, timeline, client letter, checklist, or large controls.",
+            )
+
+    def show_command_help(self) -> None:
+        help_window = tk.Toplevel(self.root)
+        help_window.title("V4 Shortcut Help")
+        help_window.geometry("680x520")
+
+        container = ttk.Frame(help_window, padding=12)
+        container.pack(fill=tk.BOTH, expand=True)
+        text = tk.Text(container, wrap=tk.WORD)
+        text.pack(fill=tk.BOTH, expand=True)
+
+        help_text = """One-Hand Workflow Shortcuts
+
+These are meant to reduce mouse travel and small precise clicks. Voice commands are optional; the main workflow is buttons plus keyboard shortcuts.
+
+Function keys:
+F5  Start recording
+F6  Stop and transcribe
+F7  Make email draft
+F8  Send transcript to PDF
+F9  Export filled PDF
+F10 Update original PDF with backup
+
+Navigation:
+Alt + Left   Previous PDF page
+Alt + Right  Next PDF page
+
+Comfort shortcuts:
+Ctrl + L  Toggle Large Controls
+Ctrl + M  Focus the transcript box
+Ctrl + H  Open this help window
+
+Suggested one-hand workflow:
+1. Press F5 and dictate notes or form answers.
+2. Press F6 to transcribe.
+3. Use Attorney Notes, Billing Entry, Timeline, Client Letter, Checklist, or Send Transcript To PDF.
+4. Review/edit the result before using it.
+5. Use Export Filled PDF for a separate copy, or Update Original PDF to update the loaded PDF after V4 creates a backup.
+
+Optional typed commands:
+If desired, type a simple command in the transcript box and run the command method from code or future UI. Supported commands include make email, fill form, export PDF, attorney notes, billing entry, timeline, client letter, checklist, and large controls.
+"""
+        text.insert("1.0", help_text)
+        text.configure(state=tk.DISABLED)
+        ttk.Button(container, text="Close", command=help_window.destroy).pack(anchor="e", pady=(8, 0))
+
+    def create_legal_work_product(self, mode: str) -> None:
+        if self.is_busy:
+            return
+        if not self.api_key_var.get().strip():
+            messagebox.showerror("Missing API key", "Enter your Google AI Studio API key first.")
+            return
+
+        transcript = self.transcript_text.get("1.0", tk.END).strip()
+        if not transcript:
+            messagebox.showerror("Missing transcript", "Record or type a transcript first.")
+            return
+
+        self.is_busy = True
+        self.status_var.set(f"Creating {self._legal_mode_label(mode)} with Gemini")
+        threading.Thread(target=self._legal_work_product_worker, args=(mode, transcript), daemon=True).start()
+
+    def _legal_work_product_worker(self, mode: str, transcript: str) -> None:
+        try:
+            prompt = self._build_legal_prompt(mode, transcript)
+            client = genai.Client(api_key=self.api_key_var.get().strip())
+            response = client.models.generate_content(
+                model=self.gemini_model_var.get().strip() or DEFAULT_GEMINI_MODEL,
+                contents=prompt,
+            )
+            output = (response.text or "").strip()
+            if not output:
+                raise RuntimeError("Gemini returned an empty response.")
+            self.root.after(0, self._legal_work_product_done, mode, output)
+        except Exception as exc:
+            self.root.after(0, self._task_failed, "Legal drafting failed", str(exc))
+
+    def _build_legal_prompt(self, mode: str, transcript: str) -> str:
+        context = self._client_matter_context()
+        base = (
+            "You are helping a lawyer turn dictated notes into editable legal work product. "
+            "Do not provide legal advice, do not invent facts, and mark uncertain items as TO VERIFY. "
+            "Keep the output practical, concise, and ready for attorney review.\n\n"
+            f"Client and matter context:\n{context}\n\n"
+            f"Transcript:\n{transcript}\n\n"
+        )
+        instructions = {
+            "formal_tone": "Rewrite the transcript in a formal legal tone while preserving all facts and meaning.",
+            "attorney_notes": "Create attorney notes with headings: Key facts, Legal issues to consider, Open questions, Documents/evidence needed, Next steps.",
+            "billing_entry": "Create a billing entry with Date: TO VERIFY, Client/Matter, Task, Billing narrative, and Time: TO VERIFY unless time is clearly stated.",
+            "timeline": "Create a chronological timeline. Use TO VERIFY for unclear dates and include people, events, and source details when present.",
+            "client_letter": "Draft a client letter with greeting, concise summary, requested action items, and professional closing. Do not include recipient address unless stated.",
+            "checklist": "Create a matter checklist with completed items, pending items, missing information, documents to request, and deadlines to verify.",
+        }
+        return base + instructions.get(mode, instructions["attorney_notes"])
+
+    def _client_matter_context(self) -> str:
+        items = {
+            "client_name": self.client_name_var.get().strip(),
+            "matter_number": self.matter_number_var.get().strip(),
+            "court": self.court_var.get().strip(),
+            "opposing_party": self.opposing_party_var.get().strip(),
+        }
+        return "\n".join(f"- {key}: {value or 'TO VERIFY'}" for key, value in items.items())
+
+    def _legal_mode_label(self, mode: str) -> str:
+        labels = {
+            "formal_tone": "formal legal rewrite",
+            "attorney_notes": "attorney notes",
+            "billing_entry": "billing entry",
+            "timeline": "timeline",
+            "client_letter": "client letter",
+            "checklist": "checklist",
+        }
+        return labels.get(mode, "legal draft")
+
+    def _legal_work_product_done(self, mode: str, output: str) -> None:
+        self.is_busy = False
+        if mode == "formal_tone":
+            self.transcript_text.delete("1.0", tk.END)
+            self.transcript_text.insert("1.0", output)
+        elif mode == "client_letter":
+            self.email_subject_var.set(self.email_subject_var.get() or "Draft client letter")
+            self.email_body_text.delete("1.0", tk.END)
+            self.email_body_text.insert("1.0", output)
+
+        self.legal_output_text.delete("1.0", tk.END)
+        self.legal_output_text.insert("1.0", output)
+        self.status_var.set(f"{self._legal_mode_label(mode).title()} ready for review")
+
     def rewrite_transcript_with_gemini(self, mode: str) -> None:
         if self.is_busy:
             return
@@ -1037,7 +1740,7 @@ This setup lets each person use their own Google Cloud OAuth credentials. Their 
 What you need:
 - A Google account
 - Internet access
-- This V3 app folder:
+- This V4 app folder:
     {self.app_dir}
 
 Step 1 - Open Google Cloud Console
@@ -1078,12 +1781,12 @@ Step 7 - Download the JSON file
 - Rename it exactly to:
     gmail-credentials.json
 
-Step 8 - Put the file in the V3 app folder
+Step 8 - Put the file in the V4 app folder
 Place gmail-credentials.json here:
 {self.app_dir}
 
 Step 9 - Connect Gmail in the app
-- Return to V3.
+- Return to V4.
 - Click Connect Gmail.
 - Your browser should open.
 - Log into Gmail.
@@ -1125,7 +1828,7 @@ Privacy notes:
             from google_auth_oauthlib.flow import InstalledAppFlow
             from googleapiclient.discovery import build
         except ImportError as exc:
-            raise RuntimeError("Gmail dependencies are missing. Re-run install_windows_v3.bat.") from exc
+            raise RuntimeError("Gmail dependencies are missing. Re-run install_windows_v4.bat.") from exc
 
         credentials = None
         if self.gmail_token_file.exists():
@@ -1138,7 +1841,7 @@ Privacy notes:
             if not self.gmail_credentials_file.exists():
                 raise RuntimeError(
                     "Missing gmail-credentials.json. Create a Google Cloud OAuth Desktop client, "
-                    "download its JSON file, rename it to gmail-credentials.json, and place it in the V3 app folder."
+                    "download its JSON file, rename it to gmail-credentials.json, and place it in the V4 app folder."
                 )
             flow = InstalledAppFlow.from_client_secrets_file(str(self.gmail_credentials_file), GMAIL_SCOPES)
             credentials = flow.run_local_server(port=0)
@@ -1231,26 +1934,75 @@ Privacy notes:
             return
 
         try:
-            reader = PdfReader(str(self.pdf_path))
-            writer = PdfWriter()
-            for page in reader.pages:
-                writer.add_page(page)
-
-            if "/AcroForm" in reader.trailer["/Root"]:
-                writer._root_object.update({NameObject("/AcroForm"): reader.trailer["/Root"]["/AcroForm"]})
-                writer._root_object["/AcroForm"].update({NameObject("/NeedAppearances"): BooleanObject(True)})
-
-            values = {name: value for name, value in self.field_values.items() if value != ""}
-            for page in writer.pages:
-                writer.update_page_form_field_values(page, values)
-
-            with open(output_path, "wb") as output_file:
-                writer.write(output_file)
+            self.write_filled_pdf(Path(output_path))
 
             self.status_var.set(f"Filled PDF saved: {output_path}")
             messagebox.showinfo("Export complete", f"Saved filled PDF:\n{output_path}")
         except Exception as exc:
             messagebox.showerror("PDF export failed", str(exc))
+
+    def update_original_pdf(self) -> None:
+        if self.pdf_path is None:
+            messagebox.showerror("Missing PDF", "Load a PDF first.")
+            return
+        if not self.pdf_path.exists():
+            messagebox.showerror("Missing PDF", f"The loaded PDF no longer exists:\n{self.pdf_path}")
+            return
+
+        self.commit_preview_editor()
+        confirmed = messagebox.askyesno(
+            "Update original PDF",
+            "This will update the currently loaded PDF file in its original folder.\n\n"
+            "V4 will make a timestamped backup first. Continue?",
+        )
+        if not confirmed:
+            return
+
+        original_path = self.pdf_path
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup_path = original_path.with_name(f"{original_path.stem}.backup-{timestamp}{original_path.suffix}")
+        temp_path = original_path.with_name(f".{original_path.stem}.v4-update-{timestamp}{original_path.suffix}")
+
+        try:
+            shutil.copy2(original_path, backup_path)
+            self.write_filled_pdf(temp_path)
+            if self.pdf_document is not None:
+                self.pdf_document.close()
+                self.pdf_document = None
+            os.replace(temp_path, original_path)
+            self.load_pdf(original_path)
+            self.status_var.set(f"Original PDF updated. Backup saved: {backup_path.name}")
+            messagebox.showinfo(
+                "Original PDF updated",
+                f"Updated:\n{original_path}\n\nBackup saved:\n{backup_path}",
+            )
+        except Exception as exc:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
+            messagebox.showerror("Update original PDF failed", str(exc))
+
+    def write_filled_pdf(self, output_path: Path) -> None:
+        if self.pdf_path is None:
+            raise RuntimeError("No PDF is loaded.")
+
+        reader = PdfReader(str(self.pdf_path))
+        writer = PdfWriter()
+        for page in reader.pages:
+            writer.add_page(page)
+
+        if "/AcroForm" in reader.trailer["/Root"]:
+            writer._root_object.update({NameObject("/AcroForm"): reader.trailer["/Root"]["/AcroForm"]})
+            writer._root_object["/AcroForm"].update({NameObject("/NeedAppearances"): BooleanObject(True)})
+
+        values = {name: value for name, value in self.field_values.items() if value != ""}
+        for page in writer.pages:
+            writer.update_page_form_field_values(page, values)
+
+        with open(output_path, "wb") as output_file:
+            writer.write(output_file)
 
     def _task_failed(self, title: str, error: str) -> None:
         self.is_busy = False

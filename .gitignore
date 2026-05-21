@@ -12,6 +12,8 @@ env/
 .env
 .env.*
 .gemini-api-key
+.gmail-token.json
+gmail-credentials.json
 
 # OS/editor noise
 .DS_Store
@@ -23,6 +25,7 @@ Thumbs.db
 
 # Whisper model downloads
 model-cache/
+matter-profiles/
 
 # Build and runtime artifacts
 dist/*
@@ -32,6 +35,8 @@ dist/*
 !dist/windows-installer-v2/WhisperVoiceToFormV2Setup.exe
 !dist/windows-installer-v3/
 !dist/windows-installer-v3/WhisperVoiceToFormV3Setup.exe
+!dist/windows-installer-v4/
+!dist/windows-installer-v4/WhisperVoiceToFormV4Setup.exe
 .cache/
 tools/ffmpeg/
 desktop-launch.log
