@@ -11,6 +11,7 @@ env/
 # Environment variables
 .env
 .env.*
+.gemini-api-key
 
 # OS/editor noise
 .DS_Store
@@ -24,7 +25,11 @@ Thumbs.db
 model-cache/
 
 # Build and runtime artifacts
-dist/
+dist/*
+!dist/windows-installer/
+!dist/windows-installer/WhisperVoiceToTextSetup.exe
+!dist/windows-installer-v2/
+!dist/windows-installer-v2/WhisperVoiceToFormV2Setup.exe
 .cache/
 tools/ffmpeg/
 desktop-launch.log
