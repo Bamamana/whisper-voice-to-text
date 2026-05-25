@@ -74,6 +74,11 @@ class GeminiFormFillerApp:
         self.email_cc_var = tk.StringVar(value="")
         self.email_bcc_var = tk.StringVar(value="")
         self.email_subject_var = tk.StringVar(value="")
+        self.collapsed_panels: set[str] = set()
+        self.panel_button_vars = {
+            "email": tk.StringVar(value="[v] Email"),
+            "fields": tk.StringVar(value="[v] PDF Fields"),
+        }
 
         self._build_ui()
         self.refresh_template_choices()
@@ -90,6 +95,7 @@ class GeminiFormFillerApp:
         api_entry.grid(row=0, column=1, sticky="ew", padx=(8, 6))
         ttk.Button(settings, text="Save Key", command=self.save_api_key).grid(row=0, column=2)
         ttk.Button(settings, text="Test Key", command=self.test_api_key).grid(row=0, column=3, padx=(6, 0))
+        ttk.Button(settings, text="API Key Help", command=self.show_api_key_help).grid(row=0, column=4, padx=(6, 0))
 
         ttk.Label(settings, text="Gemini model").grid(row=1, column=0, sticky="w", pady=(8, 0))
         ttk.Entry(settings, textvariable=self.gemini_model_var, width=28).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
@@ -132,6 +138,7 @@ class GeminiFormFillerApp:
         workspace.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
         left_column = ttk.PanedWindow(workspace, orient=tk.VERTICAL)
+        self.left_column = left_column
         preview = ttk.LabelFrame(workspace, text="PDF Preview", padding=8)
         workspace.add(left_column, weight=1)
         workspace.add(preview, weight=2)
@@ -143,9 +150,22 @@ class GeminiFormFillerApp:
         left_column.add(email_panel, weight=1)
         left_column.add(fields_panel, weight=1)
 
-        ttk.Label(transcript_panel, text="Transcript").pack(anchor="w")
+        transcript_header = ttk.Frame(transcript_panel)
+        transcript_header.pack(fill=tk.X)
+        ttk.Label(transcript_header, text="Transcript").pack(side=tk.LEFT)
+
+        panel_toggles = ttk.Frame(transcript_panel)
+        panel_toggles.pack(fill=tk.X, pady=(6, 0))
+        ttk.Button(panel_toggles, textvariable=self.panel_button_vars["email"], command=lambda: self.toggle_panel("email")).pack(side=tk.LEFT)
+        ttk.Button(panel_toggles, textvariable=self.panel_button_vars["fields"], command=lambda: self.toggle_panel("fields")).pack(side=tk.LEFT, padx=(6, 0))
+
         self.transcript_text = tk.Text(transcript_panel, wrap=tk.WORD, height=12)
-        self.transcript_text.pack(fill=tk.BOTH, expand=True)
+        self.transcript_text.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
+
+        self.collapsible_panes = {
+            "email": (email_panel, 1),
+            "fields": (fields_panel, 1),
+        }
 
         email_fields = ttk.Frame(email_panel)
         email_fields.pack(fill=tk.X)
@@ -200,6 +220,37 @@ class GeminiFormFillerApp:
         preview_body.rowconfigure(0, weight=1)
 
         ttk.Label(main, textvariable=self.status_var).pack(anchor="w", pady=(8, 0))
+
+    def toggle_panel(self, panel_name: str) -> None:
+        if panel_name in self.collapsed_panels:
+            self.collapsed_panels.remove(panel_name)
+        else:
+            self.collapsed_panels.add(panel_name)
+        self._refresh_collapsible_panels()
+
+    def _refresh_collapsible_panels(self) -> None:
+        panel_labels = {
+            "email": ("[>] Email", "[v] Email"),
+            "fields": ("[>] PDF Fields", "[v] PDF Fields"),
+        }
+
+        for panel_name, (show_label, hide_label) in panel_labels.items():
+            self.panel_button_vars[panel_name].set(show_label if panel_name in self.collapsed_panels else hide_label)
+
+        for pane, _weight in self.collapsible_panes.values():
+            try:
+                self.left_column.forget(pane)
+            except tk.TclError:
+                pass
+
+        for panel_name in ("email", "fields"):
+            if panel_name in self.collapsed_panels:
+                continue
+            pane, weight = self.collapsible_panes[panel_name]
+            self.left_column.add(pane, weight=weight)
+
+        hidden_count = len(self.collapsed_panels)
+        self.status_var.set(f"{hidden_count} panel{'s' if hidden_count != 1 else ''} collapsed")
 
     def _load_api_key(self) -> str:
         if self.api_key_file.exists():
@@ -1107,6 +1158,72 @@ Privacy notes:
         buttons = ttk.Frame(container)
         buttons.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         ttk.Button(buttons, text="Open Google Cloud Console", command=lambda: webbrowser.open("https://console.cloud.google.com/")).pack(side=tk.LEFT)
+        ttk.Button(buttons, text="Close", command=help_window.destroy).pack(side=tk.RIGHT)
+
+    def show_api_key_help(self) -> None:
+        help_window = tk.Toplevel(self.root)
+        help_window.title("Gemini API Key Help")
+        help_window.geometry("760x620")
+
+        container = ttk.Frame(help_window, padding=12)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        text = tk.Text(container, wrap=tk.WORD)
+        scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        text.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(0, weight=1)
+
+        instructions = f"""Gemini API Key Setup - Google AI Studio
+
+This app uses a Google AI Studio API key for Gemini requests. This is separate from Gmail OAuth.
+
+What you need:
+- A Google account
+- Internet access
+- This V3 app folder if you want to know where the key is saved locally:
+    {self.app_dir}
+
+Step 1 - Open Google AI Studio
+Go to:
+https://aistudio.google.com/
+
+Step 2 - Sign in
+- Sign in with the Google account you want to use for Gemini.
+
+Step 3 - Open the API key page
+- In Google AI Studio, click Get API key or API keys.
+- If prompted, choose an existing Google Cloud project or create/select one.
+
+Step 4 - Create the key
+- Click Create API key.
+- Copy the new key right away.
+
+Step 5 - Paste it into V3
+- Return to the app.
+- Paste the key into the Google AI Studio API key box.
+- Click Save Key.
+- Click Test Key to confirm it works.
+
+Step 6 - If the test fails
+- Make sure you copied the full key.
+- Try the default Gemini model first.
+- If your account does not have access to a model, switch the model field to one your account can use, such as gemini-flash-latest.
+
+Important notes:
+- This Gemini API key is not the same thing as Gmail login or Gmail OAuth.
+- Do not share the key or commit it to Git.
+- This app stores the key locally in .gemini-api-key inside this app folder.
+- Google may require project setup, billing, or region-supported access depending on the model.
+"""
+        text.insert("1.0", instructions)
+        text.configure(state=tk.DISABLED)
+
+        buttons = ttk.Frame(container)
+        buttons.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(buttons, text="Open Google AI Studio", command=lambda: webbrowser.open("https://aistudio.google.com/")).pack(side=tk.LEFT)
         ttk.Button(buttons, text="Close", command=help_window.destroy).pack(side=tk.RIGHT)
 
     def _current_email_draft(self) -> dict[str, str]:

@@ -1,4 +1,4 @@
-#define MyAppName "Whisper Voice To Form V3"
+#define MyAppName "Whisper Voice To Form V3 Offline"
 #define MyAppVersion "0.1.1"
 #define MyAppPublisher "Bamamana"
 #define MyAppSubDir "v3_auto_form_filler"
@@ -6,16 +6,16 @@
 #define MyAppPythonw "{app}\v3_auto_form_filler\.venv\Scripts\pythonw.exe"
 
 [Setup]
-AppId={{6E308780-8C1B-4AE0-8B60-FA7348F31734}
+AppId={{8F6B51E2-5126-4E53-94A8-0B6878F75AE5}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={localappdata}\Programs\Whisper Voice To Form V3
+DefaultDirName={localappdata}\Programs\Whisper Voice To Form V3 Offline
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-OutputDir=..\dist\windows-installer-v3
-OutputBaseFilename=WhisperVoiceToFormV3Setup
+OutputDir=..\dist\windows-installer-v3-offline
+OutputBaseFilename=WhisperVoiceToFormV3OfflineSetup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -32,12 +32,11 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "..\bootstrap_windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\{#MyAppSubDir}\*"; DestDir: "{app}\{#MyAppSubDir}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".venv\*,model-cache\*,templates\*,__pycache__\*,.gemini-api-key,*.pyc"
+Source: "..\{#MyAppSubDir}\*"; DestDir: "{app}\{#MyAppSubDir}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,.gemini-api-key,.gmail-token.json,gmail-credentials.json,*.pyc"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{#MyAppPythonw}"; Parameters: """{app}\{#MyAppSubDir}\{#MyAppLauncherScript}"""; WorkingDir: "{app}\{#MyAppSubDir}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{#MyAppPythonw}"; Parameters: """{app}\{#MyAppSubDir}\{#MyAppLauncherScript}"""; WorkingDir: "{app}\{#MyAppSubDir}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppSubDir}\install_windows_v3.bat"; WorkingDir: "{app}\{#MyAppSubDir}"; StatusMsg: "Installing dependencies and preparing the V3 app..."; Flags: waituntilterminated
 Filename: "{#MyAppPythonw}"; Parameters: """{app}\{#MyAppSubDir}\{#MyAppLauncherScript}"""; Description: "Launch {#MyAppName}"; WorkingDir: "{app}\{#MyAppSubDir}"; Flags: postinstall nowait skipifsilent unchecked
