@@ -3,6 +3,8 @@ setlocal EnableExtensions
 
 set "APP_DIR=%~dp0"
 set "ISS_FILE=%APP_DIR%installer\WhisperVoiceToFormV3Offline.iss"
+set "PREPARE_PS=%APP_DIR%prepare_v3_offline_payload.ps1"
+set "STAGE_DIR=%APP_DIR%build\offline-v3-stage"
 set "ISCC_CMD="
 
 where iscc >nul 2>nul
@@ -24,8 +26,12 @@ if not defined ISCC_CMD (
 )
 
 :compile
+echo Preparing V3 offline installer payload...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PREPARE_PS%" -StageDir "%STAGE_DIR%"
+if errorlevel 1 exit /b 1
+
 echo Building V3 Offline Windows installer...
-"%ISCC_CMD%" "%ISS_FILE%"
+"%ISCC_CMD%" "/DOfflineStageDir=%STAGE_DIR%" "%ISS_FILE%"
 if errorlevel 1 exit /b 1
 
 echo.

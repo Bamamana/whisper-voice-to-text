@@ -28,6 +28,7 @@ model-cache/
 matter-profiles/
 
 # Build and runtime artifacts
+build/
 dist/*
 !dist/windows-installer/
 !dist/windows-installer/WhisperVoiceToTextSetup.exe

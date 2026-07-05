@@ -64,16 +64,16 @@ def main() -> int:
 
     if not BUNDLED_PYTHON.exists() and not VENV_PYTHON.exists():
         show_message(
-            "Whisper Voice To Form V3 setup required",
-            "The V3 runtime was not found.\n\nRun install_windows_v3.bat first or reinstall the offline package, then launch the app again.",
+            "Whisper Voice To Form V6 setup required",
+            "The V6 runtime was not found.\n\nRun install_windows_v6.bat first or reinstall the offline package, then launch the app again.",
             0x10,
         )
         return 1
 
     if not SITE_PACKAGES.exists():
         show_message(
-            "Whisper Voice To Form V3 setup required",
-            "The V3 Python packages were not found.\n\nReinstall the offline package or run install_windows_v3.bat.",
+            "Whisper Voice To Form V6 setup required",
+            "The V6 Python packages were not found.\n\nReinstall the offline package or run install_windows_v6.bat.",
             0x10,
         )
         return 1
@@ -81,15 +81,15 @@ def main() -> int:
     configure_environment()
 
     try:
-        from app_v3 import main as app_main
+        from app_v6 import main as app_main
 
         app_main()
         return 0
     except Exception:
         show_message(
-            "Whisper Voice To Form V3 launch failed",
-            "Whisper Voice To Form V3 could not start.\n\n"
-            "If you need startup details, run launch_windows_v3.bat from Command Prompt.\n\n"
+            "Whisper Voice To Form V6 launch failed",
+            "Whisper Voice To Form V6 could not start.\n\n"
+            "If you need startup details, run launch_windows_v6.bat from Command Prompt.\n\n"
             f"{traceback.format_exc()}",
             0x10,
         )

@@ -1,0 +1,9 @@
+faster-whisper
+google-api-python-client
+google-auth-oauthlib
+google-genai
+numpy
+PyMuPDF
+pypdf
+python-docx
+sounddevice

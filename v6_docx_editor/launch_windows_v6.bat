@@ -12,7 +12,7 @@ if exist "%FFMPEG_DIR%\ffmpeg.exe" set "PATH=%FFMPEG_DIR%;%PATH%"
 
 if exist "%BUNDLED_PY%" (
   if not exist "%SITE_PACKAGES%" (
-    echo V3 site-packages were not found.
+    echo V6 site-packages were not found.
     echo Reinstall the offline package.
     pause
     exit /b 1
@@ -24,20 +24,20 @@ if exist "%BUNDLED_PY%" (
     set "PYTHONPATH=%SITE_PACKAGES%"
   )
 
-  "%BUNDLED_PY%" "%APP_DIR%app_v3.py"
+  "%BUNDLED_PY%" "%APP_DIR%app_v6.py"
   if errorlevel 1 pause
   endlocal
   exit /b %errorlevel%
 )
 
 if not exist "%VENV_PY%" (
-  echo V3 virtual environment not found.
-  echo Run install_windows_v3.bat first or reinstall the offline package.
+  echo V6 virtual environment not found.
+  echo Run install_windows_v6.bat first or reinstall the offline package.
   pause
   exit /b 1
 )
 
-"%VENV_PY%" "%APP_DIR%app_v3.py"
+"%VENV_PY%" "%APP_DIR%app_v6.py"
 if errorlevel 1 pause
 
 endlocal
