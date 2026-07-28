@@ -15,6 +15,18 @@ It supports:
 - desktop launchers on both Linux and Windows
 - a packaged Windows installer (`WhisperVoiceToTextSetup.exe`)
 
+## Repo Versions
+
+**The repo root is v1 — the Whisper voice-to-text app.** Everything at the top level (`app.py`, the install and launch scripts, the docs listed below) is the app from the [Show and tell post](https://github.com/openai/whisper/discussions/2746). Start here if you want local voice-to-text.
+
+The numbered folders are separate experimental projects built on top of v1. Each has its own README and setup scripts, and none of them are needed for v1:
+
+- `v2_gemini_form_filler/` — fills Adobe fillable PDFs from spoken answers
+- `v3_auto_form_filler/` — fills reusable PDF templates from spoken answers
+- `v4_legal_assistant/` — V3 plus lawyer-focused dictation and drafting tools
+- `v5_legal_assistant/` — V4 reorganized around a drive-first workspace
+- `v6_docx_editor/` — V3's PDF workflow plus Word document editing
+
 ## Current Status
 
 Working now:
