@@ -60,3 +60,19 @@ Optional: pre-download all models so switching is fast later:
   setup_windows.bat nvidia
   windows_launch.bat
   ```
+
+## Command Line
+
+Transcribe without opening the app window:
+
+Windows:
+```bat
+windows_launch.bat input.mp3 -model base -timestamps true
+```
+
+Linux:
+```bash
+./launch.sh input.mp3 --model base --timestamps
+```
+
+Add `--output transcript.txt` to choose where the transcript is saved.

@@ -38,4 +38,4 @@ if [[ "$WHISPER_ACCELERATOR" == "nvidia" || "$WHISPER_ACCELERATOR" == "auto" ]];
   fi
 fi
 
-exec "$VENV_DIR/bin/python" "$APP_DIR/app.py"
+exec "$VENV_DIR/bin/python" "$APP_DIR/app.py" "$@"

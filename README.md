@@ -8,6 +8,9 @@ It supports:
 - audio and video file transcription
 - microphone recording
 - model switching (`tiny`, `base`, `small`, `medium`, `large-v3`)
+- optional timestamps on each transcript segment
+- transcription progress percentage in the app and in the terminal
+- a command line mode for scripting and batch use
 - NVIDIA GPU acceleration when available
 - desktop launchers on both Linux and Windows
 - a packaged Windows installer (`WhisperVoiceToTextSetup.exe`)
@@ -171,6 +174,34 @@ AMD:
 ## Output Files
 
 Each transcript is saved next to the source file as `filename.whisper.txt`.
+
+Tick the `Timestamps` checkbox in the app (or pass `--timestamps` on the command line) to prefix each segment with its time range:
+
+```text
+[00:00:00.000 --> 00:00:11.000] And so my fellow Americans, ask not ...
+```
+
+## Command Line Usage
+
+Pass an audio or video file to transcribe without opening the GUI:
+
+Windows:
+```bat
+windows_launch.bat input.mp3 -model base -timestamps true
+```
+
+Linux:
+```bash
+./launch.sh input.mp3 --model base --timestamps
+```
+
+Options:
+- positional input file (mp3, wav, m4a, flac, mp4, mkv, mov, webm, ...)
+- `--model tiny|base|small|medium|large-v3` (default: `base`)
+- `--timestamps` or `--timestamps true|false` (default: `false`)
+- `--output path\to\transcript.txt` (default: `<input name>.whisper.txt` next to the source file)
+
+Progress percentage is printed to the terminal while transcribing. Running with no arguments opens the desktop app as before.
 
 ## Common Problems
 

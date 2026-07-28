@@ -33,7 +33,7 @@ if errorlevel 1 (
   echo.
 )
 
-"%VENV_PY%" "%APP_DIR%app.py"
+"%VENV_PY%" "%APP_DIR%app.py" %*
 if errorlevel 1 pause
 
 endlocal
