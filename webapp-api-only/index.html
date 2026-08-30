@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whisper V1 API — Voice to Text</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff', 100: '#e0f2fe', 500: '#0ea5e9',
+              600: '#0284c7', 700: '#0369a1', 900: '#0c4a6e'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800 antialiased h-screen flex flex-col overflow-hidden">
+
+  <header class="bg-slate-900 text-white px-6 py-3 flex items-center justify-between border-b border-slate-800 shrink-0 shadow-md">
+    <div class="flex items-center space-x-3">
+      <div class="bg-brand-500 text-white p-2 rounded-lg flex items-center justify-center shadow-lg shadow-brand-500/20">
+        <i class="fa-solid fa-microphone-lines text-xl"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg leading-none tracking-tight">Whisper V1 API</h1>
+        <span class="text-xs text-slate-400">API-only voice-to-text — no local models</span>
+      </div>
+    </div>
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-2 px-3 py-1 bg-slate-800 rounded-full border border-slate-700 text-xs text-slate-300">
+        <span id="connectionDot" class="h-2 w-2 rounded-full bg-slate-500"></span>
+        <span id="activeModelLabel">Loading provider settings</span>
+      </div>
+      <button id="settingsBtn" class="text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 p-2.5 rounded-lg border border-slate-700 transition duration-150" title="Settings">
+        <i class="fa-solid fa-sliders text-sm"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 flex overflow-hidden">
+    <section class="w-[26rem] bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto shrink-0 p-5 space-y-6">
+
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-3">
+        <h3 class="text-slate-200 font-semibold text-sm flex items-center">
+          <i class="fa-solid fa-file-audio text-brand-500 mr-2"></i> Audio File
+        </h3>
+        <label class="border-2 border-dashed border-slate-700 hover:border-brand-500/50 bg-slate-900/40 rounded-lg p-4 text-center cursor-pointer transition block">
+          <input type="file" id="fileInput" class="hidden" accept="audio/*,video/*">
+          <i class="fa-solid fa-cloud-arrow-up text-slate-400 text-xl mb-1.5 block"></i>
+          <p class="text-xs text-slate-300 font-medium">Click to choose an audio or video file</p>
+          <p class="text-[11px] text-slate-500 mt-1">Transcribed with the selected provider.</p>
+        </label>
+      </div>
+
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-5 flex flex-col items-center space-y-4">
+        <h3 class="text-slate-200 font-semibold text-sm flex items-center justify-center">
+          <i class="fa-solid fa-wand-magic-sparkles text-brand-500 mr-2"></i> Voice Recording
+        </h3>
+        <button id="recordBtn" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2">
+          🎤 Start Recording
+        </button>
+      </div>
+
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-2 text-xs text-slate-400">
+        <h3 class="text-slate-200 font-semibold text-sm flex items-center mb-2">
+          <i class="fa-solid fa-circle-info text-brand-500 mr-2"></i> Providers
+        </h3>
+        <p><span class="text-slate-300 font-semibold">AMD Lemonade</span> — LAN, fastest. No key needed.</p>
+        <p><span class="text-slate-300 font-semibold">OpenRouter / OpenAI / Gemini</span> — needs an API key.</p>
+        <p><span class="text-slate-300 font-semibold">LAN Whisper Server</span> — any OpenAI-compatible server on your network.</p>
+      </div>
+    </section>
+
+    <section class="flex-1 flex flex-col p-6 space-y-4 overflow-hidden">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-slate-800">Transcript</h2>
+        <div class="flex gap-2">
+          <button id="copyBtn" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-semibold px-4 py-2 rounded-lg transition">
+            <i class="fa-solid fa-copy mr-1"></i> Copy
+          </button>
+          <button id="saveBtn" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-semibold px-4 py-2 rounded-lg transition">
+            <i class="fa-solid fa-download mr-1"></i> Save .txt
+          </button>
+        </div>
+      </div>
+      <textarea id="outputText" class="flex-1 w-full resize-none rounded-xl border border-slate-300 bg-white p-4 text-sm text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Your transcript will appear here..." spellcheck="false"></textarea>
+      <div id="statusBar" class="text-xs text-slate-500">Ready.</div>
+    </section>
+  </main>
+
+  <!-- Settings modal -->
+  <div id="settingsModal" class="fixed inset-0 z-[130] hidden items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+    <div class="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-800 shadow-2xl" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+        <h3 class="text-base font-bold text-slate-100">Transcription Settings</h3>
+        <button id="closeSettingsBtn" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="space-y-4 p-5">
+        <label class="block text-xs font-bold uppercase text-slate-400">Provider
+          <select id="providerSelect" class="mt-1 block w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-100"></select>
+        </label>
+        <div id="apiKeyRow">
+          <label class="block text-xs font-bold uppercase text-slate-400">API Key
+            <input id="apiKeyInput" type="password" placeholder="Paste your API key" class="mt-1 block w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+          </label>
+        </div>
+        <div id="baseUrlRow">
+          <label class="block text-xs font-bold uppercase text-slate-400">Base URL
+            <input id="baseUrlInput" type="text" placeholder="http://192.168.1.50:9000/v1" class="mt-1 block w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+          </label>
+        </div>
+        <div class="flex items-center justify-between rounded-lg border border-slate-600 bg-slate-900 px-3 py-2">
+          <div>
+            <div class="text-xs font-bold uppercase text-slate-400">Model</div>
+            <div id="modelLabel" class="text-sm font-semibold text-slate-100">not set</div>
+          </div>
+          <button id="pickModelBtn" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-700">
+            Browse models
+          </button>
+        </div>
+        <div class="flex items-center gap-3">
+          <button id="testProviderBtn" class="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-emerald-700">Test connection</button>
+          <span id="testResult" class="text-xs text-slate-400"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

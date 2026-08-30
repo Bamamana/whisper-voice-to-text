@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whisper V1 API — Voice to Text</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff', 100: '#e0f2fe', 500: '#0ea5e9',
+              600: '#0284c7', 700: '#0369a1', 900: '#0c4a6e'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800 antialiased h-screen flex flex-col overflow-hidden">
+
+  <header class="bg-slate-900 text-white px-6 py-3 flex items-center justify-between border-b border-slate-800 shrink-0 shadow-md">
+    <div class="flex items-center space-x-3">
+      <div class="bg-brand-500 text-white p-2 rounded-lg flex items-center justify-center shadow-lg shadow-brand-500/20">
+        <i class="fa-solid fa-microphone-lines text-xl"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg leading-none tracking-tight">Whisper V1 API</h1>
+        <span class="text-xs text-slate-400">API-only voice-to-text — no local models</span>
+      </div>
+    </div>
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-2 px-3 py-1 bg-slate-800 rounded-full border border-slate-700 text-xs text-slate-300">
+        <span id="connectionDot" class="h-2 w-2 rounded-full bg-slate-500"></span>
+        <span id="activeModelLabel">Loading provider settings</span>
+      </div>
+      <button id="settingsBtn" class="text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 p-2.5 rounded-lg border border-slate-700 transition duration-150" title="Settings">
+        <i class="fa-solid fa-sliders text-sm"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 flex overflow-hidden">
+    <section class="w-[26rem] bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto shrink-0 p-5 space-y-6">
+
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-3">
+        <h3 class="text-slate-200 font-semibold text-sm flex items-center">
+          <i class="fa-solid fa-file-audio text-brand-500 mr-2"></i> Audio File
+        </h3>
+        <label class="border-2 border-dashed border-slate-700 hover:border-brand-500/50 bg-slate-900/40 rounded-lg p-4 text-center cursor-pointer transition block">
+          <input type="file" id="fileInput" class="hidden" accept="audio/*,video/*">
+          <i class="fa-solid fa-cloud-arrow-up text-slate-400 text-xl mb-1.5 block"></i>
+          <p class="text-xs text-slate-300 font-medium">Click to choose an audio or video file</p>
+          <p class="text-[11px] text-slate-500 mt-1">Transcribed with the selected provider.</p>
+        </label>
+      </div>
+
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-5 flex flex-col items-center space-y-4">
+        <h3 class="text-slate-200 font-semibold text-sm flex items-center justify-center">
+          <i class="fa-solid fa-wand-magic-sparkles text-brand-500 mr-2"></i> Voice Recording
+        </h3>
+        <button id="recordBtn" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2">
+          🎤 Start Recording
+        </button>
+      </div>
+
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-2 text-xs text-slate-400">
+        <h3 class="text-slate-200 font-semibold text-sm flex items-center mb-2">
+          <i class="fa-solid fa-circle-info text-brand-500 mr-2"></i> Providers
+        </h3>
+        <p><span class="text-slate-300 font-semibold">AMD Lemonade</span> — LAN, fastest. No key needed.</p>
+        <p><span class="text-slate-300 font-semibold">OpenRouter / OpenAI / Gemini</span> — needs an API key.</p>
+        <p><span class="text-slate-300 font-semibold">LAN Whisper Server</span> — any OpenAI-compatible server on your network.</p>
+      </div>
+    </section>
+
+    <section class="flex-1 flex flex-col p-6 space-y-4 overflow-hidden">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-slate-800">Transcript</h2>
+        <div class="flex gap-2">
+          <button id="copyBtn" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-semibold px-4 py-2 rounded-lg transition">
+            <i class="fa-solid fa-copy mr-1"></i> Copy
+          </button>
+          <button id="saveBtn" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-semibold px-4 py-2 rounded-lg transition">
+            <i class="fa-solid fa-download mr-1"></i> Save .txt
+          </button>
+        </div>
+      </div>
+      <textarea id="outputText" class="flex-1 w-full resize-none rounded-xl border border-slate-300 bg-white p-4 text-sm text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Your transcript will appear here..." spellcheck="false"></textarea>
+      <div id="statusBar" class="text-xs text-slate-500">Ready.</div>
+    </section>
+  </main>
+
+  <!-- Settings modal -->
+  <div id="settingsModal" class="fixed inset-0 z-[130] hidden items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+    <div class="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-800 shadow-2xl" role="dialog" aria-modal="true">
+      <div class="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+        <h3 class="text-base font-bold text-slate-100">Transcription Settings</h3>
+        <button id="closeSettingsBtn" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="space-y-4 p-5">
+        <label class="block text-xs font-bold uppercase text-slate-400">Provider
+          <select id="providerSelect" class="mt-1 block w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-100"></select>
+        </label>
+        <div id="apiKeyRow">
+          <label class="block text-xs font-bold uppercase text-slate-400">API Key
+            <input id="apiKeyInput" type="password" placeholder="Paste your API key" class="mt-1 block w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+          </label>
+        </div>
+        <div id="baseUrlRow">
+          <label class="block text-xs font-bold uppercase text-slate-400">Base URL
+            <input id="baseUrlInput" type="text" placeholder="http://192.168.1.50:9000/v1" class="mt-1 block w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+          </label>
+        </div>
+        <div class="flex items-center justify-between rounded-lg border border-slate-600 bg-slate-900 px-3 py-2">
+          <div>
+            <div class="text-xs font-bold uppercase text-slate-400">Model</div>
+            <div id="modelLabel" class="text-sm font-semibold text-slate-100">not set</div>
+          </div>
+          <button id="pickModelBtn" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-700">
+            Browse models
+          </button>
+        </div>
+        <div class="flex items-center gap-3">
+          <button id="testProviderBtn" class="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-emerald-700">Test connection</button>
+          <span id="testResult" class="text-xs text-slate-400"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+// Provider profiles for the API-only build. No local whisper models.
+
+const providerProfiles = {
+  lemonade: {
+    label: 'AMD Lemonade (LAN)',
+    transport: 'openai',
+    url: 'http://localhost:13305/v1',
+    apiKeyRequired: false,
+    sttModel: 'Whisper-Large-v3-Turbo'
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    transport: 'openai',
+    url: 'https://openrouter.ai/api/v1',
+    apiKeyRequired: true,
+    sttModel: 'openai/whisper-1'
+  },
+  openai: {
+    label: 'OpenAI',
+    transport: 'openai',
+    url: 'https://api.openai.com/v1',
+    apiKeyRequired: true,
+    sttModel: 'whisper-1'
+  },
+  gemini: {
+    label: 'Gemini',
+    transport: 'gemini',
+    url: 'https://generativelanguage.googleapis.com/v1beta',
+    apiKeyRequired: true,
+    sttModel: 'gemini-2.5-flash'
+  },
+  lan: {
+    label: 'LAN Whisper Server',
+    transport: 'openai',
+    url: '',
+    apiKeyRequired: false,
+    sttModel: 'whisper-1'
+  },
+  compatible: {
+    label: 'OpenAI-Compatible',
+    transport: 'openai',
+    url: '',
+    apiKeyRequired: false,
+    sttModel: 'whisper-1'
+  }
+};
+
+const PROVIDER_ORDER = ['lemonade', 'openrouter', 'openai', 'gemini', 'lan', 'compatible'];
+
+function getProviderProfile(provider) {
+  return providerProfiles[provider] || providerProfiles.compatible;
+}
+
+function getTransport(provider) {
+  return getProviderProfile(provider).transport;
+}
+
+// Settings persistence in localStorage (API-only build).
+
+
+const STORAGE_KEY = 'wv1api_settings';
+
+const defaultSettings = {
+  provider: 'lemonade',
+  apiKey: '',
+  baseUrl: '',
+  model: ''
+};
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return { ...defaultSettings };
+    }
+    return { ...defaultSettings, ...JSON.parse(raw) };
+  } catch (_error) {
+    return { ...defaultSettings };
+  }
+}
+
+function saveSettings(settings) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+}
+
+function resolveProviderConfig(settings) {
+  const profile = getProviderProfile(settings.provider);
+  return {
+    provider: settings.provider,
+    transport: profile.transport,
+    baseUrl: (settings.baseUrl || profile.url || '').replace(/\/$/, ''),
+    apiKey: settings.apiKey || '',
+    model: settings.model || profile.sttModel
+  };
+}
+
+// Microphone recording -> WAV blob (mirrors AuraEdit's audio-format.js).
+
+let audioContext = null;
+
+function getAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    throw new Error('This browser cannot record audio.');
+  }
+  if (!audioContext || audioContext.state === 'closed') {
+    audioContext = new AudioContextClass();
+  }
+  return audioContext;
+}
+
+function clampSample(sample) {
+  return Math.max(-1, Math.min(1, sample));
+}
+
+function encodeAudioBufferToWav(audioBuffer) {
+  const channelCount = audioBuffer.numberOfChannels;
+  const frameCount = audioBuffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = channelCount * bytesPerSample;
+  const byteRate = audioBuffer.sampleRate * blockAlign;
+  const pcmDataLength = frameCount * blockAlign;
+  const buffer = new ArrayBuffer(44 + pcmDataLength);
+  const view = new DataView(buffer);
+
+  const writeAscii = (offset, value) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  };
+
+  writeAscii(0, 'RIFF');
+  view.setUint32(4, 36 + pcmDataLength, true);
+  writeAscii(8, 'WAVE');
+  writeAscii(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(22, channelCount, true);
+  view.setUint32(24, audioBuffer.sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint32(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeAscii(36, 'data');
+  view.setUint32(40, pcmDataLength, true);
+
+  const channels = Array.from({ length: channelCount }, (_v, i) => audioBuffer.getChannelData(i));
+  let offset = 44;
+  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+    for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+      const sample = clampSample(channels[channelIndex][frameIndex] ?? 0);
+      const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      view.setInt16(offset, intSample, true);
+      offset += bytesPerSample;
+    }
+  }
+
+  return buffer;
+}
+
+async function blobToWav(audioBlob) {
+  const mimeType = String(audioBlob?.type || '').trim().toLowerCase();
+  if (mimeType === 'audio/wav' || mimeType === 'audio/wave' || mimeType === 'audio/x-wav') {
+    return { blob: audioBlob, mimeType: 'audio/wav', extension: 'wav' };
+  }
+
+  const context = getAudioContext();
+  try {
+    const sourceBuffer = await audioBlob.arrayBuffer();
+    const decoded = await context.decodeAudioData(sourceBuffer.slice(0));
+    const wavBuffer = encodeAudioBufferToWav(decoded);
+    return {
+      blob: new Blob([wavBuffer], { type: 'audio/wav' }),
+      mimeType: 'audio/wav',
+      extension: 'wav'
+    };
+  } catch (_error) {
+    throw new Error('Could not convert the recording into WAV for transcription.');
+  }
+}
+
+class MicRecorder {
+  constructor() {
+    this.stream = null;
+    this.mediaRecorder = null;
+    this.chunks = [];
+    this.recording = false;
+  }
+
+  async start() {
+    if (this.recording) return;
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    this.chunks = [];
+    this.mediaRecorder = new MediaRecorder(this.stream);
+    this.mediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        this.chunks.push(event.data);
+      }
+    };
+    this.mediaRecorder.start();
+    this.recording = true;
+  }
+
+  async stop() {
+    if (!this.recording) return null;
+    const stopped = new Promise((resolve) => {
+      this.mediaRecorder.onstop = resolve;
+    });
+    this.mediaRecorder.stop();
+    await stopped;
+    this.stream.getTracks().forEach((track) => track.stop());
+    this.recording = false;
+    return new Blob(this.chunks, { type: this.mediaRecorder.mimeType || 'audio/webm' });
+  }
+}
+
+// Transcription backends: OpenAI-compatible (Lemonade, OpenRouter, OpenAI, LAN)
+// and Gemini. No local whisper support in this build.
+
+
+function normalizeBaseUrl(baseUrl) {
+  return String(baseUrl || '').replace(/\/$/, '');
+}
+
+async function ensureJsonResponse(response, label) {
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const payload = await response.json();
+      detail = payload?.error?.message || payload?.error || payload?.detail || '';
+    } catch (_error) {
+      detail = await response.text().catch(() => '');
+    }
+    throw new Error(`${label} failed (${response.status}): ${String(detail).slice(0, 300)}`);
+  }
+  return response.json();
+}
+
+async function transcribeWithOpenAiCompatible(config, blob, extension) {
+  const endpoint = `${normalizeBaseUrl(config.baseUrl)}/audio/transcriptions`;
+  const formData = new FormData();
+  const audioFile = new File([blob], `recording-${Date.now()}.${extension}`, { type: blob.type });
+  const headers = {};
+
+  formData.append('file', audioFile);
+  formData.append('model', config.model);
+  formData.append('response_format', 'json');
+
+  if (config.apiKey) {
+    headers.Authorization = `Bearer ${config.apiKey}`;
+  }
+
+  const response = await fetch(endpoint, { method: 'POST', headers, body: formData });
+  const json = await ensureJsonResponse(response, 'Speech request');
+  const text = json.text || '';
+  if (!text.trim()) {
+    throw new Error('The speech provider returned an empty transcript.');
+  }
+  return text.trim();
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error('Could not encode audio input.'));
+        return;
+      }
+      resolve(result.split(',')[1]);
+    };
+    reader.onerror = () => reject(new Error('Could not read audio input.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function transcribeWithGemini(config, blob) {
+  const endpoint = `${normalizeBaseUrl(config.baseUrl)}/models/${config.model}:generateContent?key=${config.apiKey}`;
+  const base64 = await blobToBase64(blob);
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { text: 'Transcribe this audio exactly as spoken. Return only the transcript text.' },
+          { inline_data: { mime_type: blob.type || 'audio/wav', data: base64 } }
+        ]
+      }],
+      generationConfig: { temperature: 0 }
+    })
+  });
+  const json = await ensureJsonResponse(response, 'Gemini speech request');
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!text.trim()) {
+    throw new Error('The speech provider returned an empty transcript.');
+  }
+  return text.trim();
+}
+
+async function transcribeBlob(blob, extension, settings) {
+  const config = resolveProviderConfig(settings);
+  const transport = getTransport(config.provider);
+
+  if (transport === 'gemini') {
+    return transcribeWithGemini(config, blob);
+  }
+  return transcribeWithOpenAiCompatible(config, blob, extension);
+}
+
+async function discoverModels(settings) {
+  const config = resolveProviderConfig(settings);
+  const transport = getTransport(config.provider);
+
+  if (transport === 'gemini') {
+    const endpoint = `${normalizeBaseUrl(config.baseUrl)}/models?key=${config.apiKey}`;
+    const response = await fetch(endpoint);
+    const json = await ensureJsonResponse(response, 'Gemini model discovery');
+    return (json.models || [])
+      .filter((model) => (model.supportedGenerationMethods || []).includes('generateContent'))
+      .map((model) => ({ id: model.name.replace(/^models\//, ''), label: model.displayName || model.name }));
+  }
+
+  const endpoint = `${normalizeBaseUrl(config.baseUrl)}/models`;
+  const headers = {};
+  if (config.apiKey) {
+    headers.Authorization = `Bearer ${config.apiKey}`;
+  }
+  const response = await fetch(endpoint, { headers });
+  const json = await ensureJsonResponse(response, 'Model discovery');
+  return (json.data || [])
+    .map((model) => ({ id: model.id, label: model.id }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// Dynamic model picker modal (pattern from Visual Planner ai-model-catalog.js).
+
+let dialog = null;
+
+function ensureDialog() {
+  if (dialog) return dialog;
+  const root = document.createElement('div');
+  root.className = 'fixed inset-0 z-[140] hidden items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm';
+  root.append(document.createRange().createContextualFragment(`
+    <div class="w-full max-w-md rounded-xl border border-slate-700 bg-slate-800 shadow-2xl" role="dialog" aria-modal="true">
+      <div class="border-b border-slate-700 px-5 py-4">
+        <h3 class="text-base font-bold text-slate-100">Choose Whisper model</h3>
+        <p class="mt-1 text-xs text-slate-400">Models are loaded live from the selected provider.</p>
+      </div>
+      <div class="space-y-4 p-5">
+        <div data-role="status" class="text-xs text-slate-400">Loading models...</div>
+        <label class="block text-xs font-bold uppercase text-slate-400">Model
+          <select data-role="model" class="mt-1 block w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-100"></select>
+        </label>
+        <p data-role="error" class="hidden text-xs font-semibold text-rose-400"></p>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-slate-700 px-5 py-3">
+        <button type="button" data-role="cancel" class="rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-300 hover:bg-slate-700">Cancel</button>
+        <button type="button" data-role="confirm" class="rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-brand-700">Use model</button>
+      </div>
+    </div>`));
+  document.body.appendChild(root);
+  dialog = {
+    root,
+    status: root.querySelector('[data-role="status"]'),
+    model: root.querySelector('[data-role="model"]'),
+    error: root.querySelector('[data-role="error"]'),
+    cancel: root.querySelector('[data-role="cancel"]'),
+    confirm: root.querySelector('[data-role="confirm"]')
+  };
+  return dialog;
+}
+
+// fetchModels: async () => [{ id, label }]
+async function promptForModel(fetchModels, selectedModel = '') {
+  const elements = ensureDialog();
+  elements.status.textContent = 'Loading models...';
+  elements.status.classList.remove('hidden');
+  elements.model.replaceChildren();
+  elements.model.classList.add('hidden');
+  elements.error.classList.add('hidden');
+  elements.root.classList.remove('hidden');
+  elements.root.classList.add('flex');
+
+  let models = [];
+  try {
+    models = await fetchModels();
+  } catch (error) {
+    elements.status.classList.add('hidden');
+    elements.error.textContent = error.message;
+    elements.error.classList.remove('hidden');
+  }
+
+  if (models.length > 0) {
+    elements.status.classList.add('hidden');
+    elements.model.classList.remove('hidden');
+    elements.model.replaceChildren(...models.map((model) => new Option(model.label || model.id, model.id)));
+    const preferred = models.find((model) => model.id === selectedModel)?.id || models[0].id;
+    elements.model.value = preferred;
+  } else if (!elements.error.textContent) {
+    elements.status.textContent = 'No models found for this provider.';
+  }
+
+  return new Promise((resolve) => {
+    const finish = (value) => {
+      elements.root.classList.add('hidden');
+      elements.root.classList.remove('flex');
+      elements.cancel.onclick = null;
+      elements.confirm.onclick = null;
+      resolve(value);
+    };
+    elements.cancel.onclick = () => finish(null);
+    elements.confirm.onclick = () => {
+      if (!elements.model.value) return;
+      finish({ model: elements.model.value });
+    };
+  });
+}
+
+// App wiring for the API-only build.
+
+
+const recorder = new MicRecorder();
+let settings = loadSettings();
+
+const $ = (id) => document.getElementById(id);
+
+function updateConnectionBadge(text, ok) {
+  $('connectionDot').className = `h-2 w-2 rounded-full ${ok ? 'bg-emerald-400' : 'bg-slate-500'}`;
+  $('activeModelLabel').textContent = text;
+}
+
+function refreshProviderUi() {
+  const profile = getProviderProfile(settings.provider);
+  const config = resolveProviderConfig(settings);
+  $('providerSelect').value = settings.provider;
+  $('apiKeyInput').value = settings.apiKey;
+  $('baseUrlInput').value = settings.baseUrl || profile.url || '';
+  $('modelLabel').textContent = config.model || 'not set';
+  // Always show both inputs so they can be overridden for any provider.
+  $('apiKeyInput').placeholder = profile.apiKeyRequired
+    ? 'Paste your API key'
+    : 'API key (optional for this provider)';
+  updateConnectionBadge(`${profile.label} · ${config.model || 'no model'}`, Boolean(config.model));
+}
+
+function openSettings() {
+  refreshProviderUi();
+  $('settingsModal').classList.remove('hidden');
+  $('settingsModal').classList.add('flex');
+}
+
+function closeSettings() {
+  $('settingsModal').classList.add('hidden');
+  $('settingsModal').classList.remove('flex');
+}
+
+async function pickModel() {
+  try {
+    const selection = await promptForModel(() => discoverModels(settings), settings.model);
+    if (selection) {
+      settings.model = selection.model;
+      saveSettings(settings);
+      refreshProviderUi();
+    }
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function toggleRecording() {
+  if (!recorder.recording) {
+    try {
+      await recorder.start();
+      $('recordBtn').textContent = '⏹ Stop Recording';
+      $('recordBtn').classList.replace('bg-brand-600', 'bg-rose-600');
+      $('statusBar').textContent = 'Recording... click Stop when done.';
+    } catch (error) {
+      alert(`Microphone error: ${error.message}`);
+    }
+    return;
+  }
+
+  const blob = await recorder.stop();
+  $('recordBtn').textContent = '🎤 Start Recording';
+  $('recordBtn').classList.replace('bg-rose-600', 'bg-brand-600');
+  $('statusBar').textContent = 'Transcribing...';
+  await runTranscription(blob);
+}
+
+async function runTranscription(blob) {
+  const started = performance.now();
+  try {
+    const wav = await blobToWav(blob);
+    const text = await transcribeBlob(wav.blob, wav.extension, settings);
+    const seconds = ((performance.now() - started) / 1000).toFixed(1);
+    $('outputText').value = text;
+    $('statusBar').textContent = `Done in ${seconds}s · ${getProviderProfile(settings.provider).label}`;
+    updateConnectionBadge(`${getProviderProfile(settings.provider).label} · ${resolveProviderConfig(settings).model}`, true);
+  } catch (error) {
+    $('statusBar').textContent = 'Transcription failed.';
+    alert(error.message);
+  }
+}
+
+function wireEvents() {
+  $('settingsBtn').addEventListener('click', openSettings);
+  $('closeSettingsBtn').addEventListener('click', closeSettings);
+  $('pickModelBtn').addEventListener('click', pickModel);
+  $('recordBtn').addEventListener('click', toggleRecording);
+
+  $('copyBtn').addEventListener('click', () => {
+    const text = $('outputText').value;
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    $('statusBar').textContent = 'Transcript copied to clipboard.';
+  });
+
+  $('saveBtn').addEventListener('click', () => {
+    const text = $('outputText').value;
+    if (!text) return;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `transcript-${Date.now()}.txt`;
+    link.click();
+  });
+
+  $('fileInput').addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    $('statusBar').textContent = `Transcribing ${file.name}...`;
+    await runTranscription(file);
+    event.target.value = '';
+  });
+
+  $('providerSelect').addEventListener('change', (event) => {
+    settings.provider = event.target.value;
+    const profile = getProviderProfile(settings.provider);
+    settings.baseUrl = profile.url || '';
+    settings.model = profile.sttModel || '';
+    saveSettings(settings);
+    refreshProviderUi();
+  });
+
+  $('apiKeyInput').addEventListener('input', (event) => {
+    settings.apiKey = event.target.value.trim();
+    saveSettings(settings);
+  });
+
+  $('baseUrlInput').addEventListener('input', (event) => {
+    settings.baseUrl = event.target.value.trim();
+    saveSettings(settings);
+  });
+
+  $('testProviderBtn').addEventListener('click', async () => {
+    $('testResult').textContent = 'Testing...';
+    try {
+      const models = await discoverModels(settings);
+      $('testResult').textContent = `OK — ${models.length} model(s) available.`;
+    } catch (error) {
+      $('testResult').textContent = `Failed: ${error.message}`;
+    }
+  });
+}
+
+function populateProviderSelect() {
+  $('providerSelect').replaceChildren(...PROVIDER_ORDER.map((id) => new Option(providerProfiles[id].label, id)));
+}
+
+populateProviderSelect();
+wireEvents();
+refreshProviderUi();
+</script>
+</body>
+</html>

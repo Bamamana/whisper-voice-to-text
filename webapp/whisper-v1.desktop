@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Whisper V1 Voice to Text
+Comment=Local voice-to-text with flexible backends (Lemonade, OpenRouter, local whisper)
+Exec=/home/steven/github/Bamamana/whisper-voice-to-text/webapp/launch_webapp.sh
+Icon=audio-input-microphone
+Terminal=false
+Categories=Audio;Utility;
