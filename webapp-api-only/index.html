@@ -69,6 +69,10 @@
         <button id="recordBtn" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2">
           🎤 Start Recording
         </button>
+        <button id="liveBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2">
+          🔴 Go Live
+        </button>
+        <p class="text-[11px] text-slate-500 text-center">Go Live streams words as you speak (Lemonade realtime models: Moonshine / Whisper).</p>
       </div>
 
       <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-2 text-xs text-slate-400">
@@ -121,12 +125,24 @@
         </div>
         <div class="flex items-center justify-between rounded-lg border border-slate-600 bg-slate-900 px-3 py-2">
           <div>
-            <div class="text-xs font-bold uppercase text-slate-400">Model</div>
+            <div class="text-xs font-bold uppercase text-slate-400">Transcribe Model <span class="normal-case font-normal text-slate-500">(record &amp; file)</span></div>
             <div id="modelLabel" class="text-sm font-semibold text-slate-100">not set</div>
           </div>
           <button id="pickModelBtn" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-700">
             Browse models
           </button>
+        </div>
+        <div class="flex items-center justify-between rounded-lg border border-slate-600 bg-slate-900 px-3 py-2">
+          <div>
+            <div class="text-xs font-bold uppercase text-slate-400">Live Model <span class="normal-case font-normal text-slate-500">(Go Live streaming)</span></div>
+            <div id="liveModelLabel" class="text-sm font-semibold text-slate-100">not set</div>
+          </div>
+          <div class="flex gap-2">
+            <button id="clearLiveModelBtn" class="rounded-lg bg-slate-600 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-slate-500" title="Use the transcribe model for live too">Same as transcribe</button>
+            <button id="pickLiveModelBtn" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">
+              Browse models
+            </button>
+          </div>
         </div>
         <div class="flex items-center gap-3">
           <button id="testProviderBtn" class="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-emerald-700">Test connection</button>

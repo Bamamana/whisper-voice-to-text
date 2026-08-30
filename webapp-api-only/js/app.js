@@ -5,9 +5,11 @@ import { transcribeBlob, discoverModels } from './transcription.js';
 import { loadSettings, saveSettings, resolveProviderConfig } from './settings.js';
 import { providerProfiles, PROVIDER_ORDER, getProviderProfile } from './providers.js';
 import { promptForModel } from './model-picker.js';
+import { LiveTranscriber } from './live-transcription.js';
 
 const recorder = new MicRecorder();
 let settings = loadSettings();
+let live = null; // LiveTranscriber instance while a live session runs
 
 const $ = (id) => document.getElementById(id);
 
@@ -23,6 +25,7 @@ function refreshProviderUi() {
   $('apiKeyInput').value = settings.apiKey;
   $('baseUrlInput').value = settings.baseUrl || profile.url || '';
   $('modelLabel').textContent = config.model || 'not set';
+  $('liveModelLabel').textContent = settings.liveModel || `${config.model || 'not set'} (same as transcribe)`;
   // Always show both inputs so they can be overridden for any provider.
   $('apiKeyInput').placeholder = profile.apiKeyRequired
     ? 'Paste your API key'
@@ -54,6 +57,25 @@ async function pickModel() {
   }
 }
 
+async function pickLiveModel() {
+  try {
+    const selection = await promptForModel(() => discoverModels(settings), settings.liveModel || settings.model);
+    if (selection) {
+      settings.liveModel = selection.model;
+      saveSettings(settings);
+      refreshProviderUi();
+    }
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+function clearLiveModel() {
+  settings.liveModel = '';
+  saveSettings(settings);
+  refreshProviderUi();
+}
+
 async function toggleRecording() {
   if (!recorder.recording) {
     try {
@@ -72,6 +94,52 @@ async function toggleRecording() {
   $('recordBtn').classList.replace('bg-rose-600', 'bg-brand-600');
   $('statusBar').textContent = 'Transcribing...';
   await runTranscription(blob);
+}
+
+// --- Live mode (Lemonade realtime WebSocket) ---
+
+async function toggleLive() {
+  if (live) {
+    const finalText = await live.stop();
+    live = null;
+    $('liveBtn').textContent = '🔴 Go Live';
+    $('liveBtn').classList.replace('bg-rose-600', 'bg-emerald-600');
+    if (finalText) {
+      $('outputText').value = finalText;
+    }
+    return;
+  }
+
+  const config = resolveProviderConfig(settings);
+  if (!config.baseUrl) {
+    alert('Set the provider Base URL in Settings first (Live mode needs Lemonade or a compatible realtime server).');
+    return;
+  }
+
+  // Live mode uses its own model (e.g. Moonshine-Streaming) when set,
+  // falling back to the transcription model.
+  const liveModel = settings.liveModel || config.model;
+
+  live = new LiveTranscriber({
+    onInterim: (text) => {
+      const base = $('outputText').value;
+      $('outputText').value = base ? `${base} ${text}` : text;
+    },
+    onFinal: (_text, fullText) => {
+      $('outputText').value = fullText;
+    },
+    onStatus: (text) => { $('statusBar').textContent = text; },
+    onError: (message) => { $('statusBar').textContent = `Live error: ${message}`; }
+  });
+
+  try {
+    await live.start(config.baseUrl, liveModel);
+    $('liveBtn').textContent = '⏹ Stop Live';
+    $('liveBtn').classList.replace('bg-emerald-600', 'bg-rose-600');
+  } catch (error) {
+    live = null;
+    alert(`Live mode failed: ${error.message}`);
+  }
 }
 
 async function runTranscription(blob) {
@@ -93,7 +161,10 @@ function wireEvents() {
   $('settingsBtn').addEventListener('click', openSettings);
   $('closeSettingsBtn').addEventListener('click', closeSettings);
   $('pickModelBtn').addEventListener('click', pickModel);
+  $('pickLiveModelBtn').addEventListener('click', pickLiveModel);
+  $('clearLiveModelBtn').addEventListener('click', clearLiveModel);
   $('recordBtn').addEventListener('click', toggleRecording);
+  $('liveBtn').addEventListener('click', toggleLive);
 
   $('copyBtn').addEventListener('click', () => {
     const text = $('outputText').value;

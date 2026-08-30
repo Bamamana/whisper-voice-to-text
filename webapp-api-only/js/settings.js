@@ -8,7 +8,8 @@ export const defaultSettings = {
   provider: 'lemonade',
   apiKey: '',
   baseUrl: '',
-  model: ''
+  model: '',
+  liveModel: ''
 };
 
 export function loadSettings() {

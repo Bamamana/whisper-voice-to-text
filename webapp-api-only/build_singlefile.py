@@ -11,6 +11,7 @@ MODULE_ORDER = [
     "js/settings.js",
     "js/audio.js",
     "js/transcription.js",
+    "js/live-transcription.js",
     "js/model-picker.js",
     "js/app.js",
 ]

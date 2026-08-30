@@ -69,6 +69,10 @@
         <button id="recordBtn" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2">
           🎤 Start Recording
         </button>
+        <button id="liveBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2">
+          🔴 Go Live
+        </button>
+        <p class="text-[11px] text-slate-500 text-center">Go Live streams words as you speak (Lemonade realtime models: Moonshine / Whisper).</p>
       </div>
 
       <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-2 text-xs text-slate-400">
@@ -121,12 +125,24 @@
         </div>
         <div class="flex items-center justify-between rounded-lg border border-slate-600 bg-slate-900 px-3 py-2">
           <div>
-            <div class="text-xs font-bold uppercase text-slate-400">Model</div>
+            <div class="text-xs font-bold uppercase text-slate-400">Transcribe Model <span class="normal-case font-normal text-slate-500">(record &amp; file)</span></div>
             <div id="modelLabel" class="text-sm font-semibold text-slate-100">not set</div>
           </div>
           <button id="pickModelBtn" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-700">
             Browse models
           </button>
+        </div>
+        <div class="flex items-center justify-between rounded-lg border border-slate-600 bg-slate-900 px-3 py-2">
+          <div>
+            <div class="text-xs font-bold uppercase text-slate-400">Live Model <span class="normal-case font-normal text-slate-500">(Go Live streaming)</span></div>
+            <div id="liveModelLabel" class="text-sm font-semibold text-slate-100">not set</div>
+          </div>
+          <div class="flex gap-2">
+            <button id="clearLiveModelBtn" class="rounded-lg bg-slate-600 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-slate-500" title="Use the transcribe model for live too">Same as transcribe</button>
+            <button id="pickLiveModelBtn" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">
+              Browse models
+            </button>
+          </div>
         </div>
         <div class="flex items-center gap-3">
           <button id="testProviderBtn" class="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-emerald-700">Test connection</button>
@@ -203,7 +219,8 @@ const defaultSettings = {
   provider: 'lemonade',
   apiKey: '',
   baseUrl: '',
-  model: ''
+  model: '',
+  liveModel: ''
 };
 
 function loadSettings() {
@@ -473,6 +490,139 @@ async function discoverModels(settings) {
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
+// Live transcription over Lemonade's OpenAI Realtime WebSocket API.
+// Protocol (from lemonade-sdk docs/api/openai.md `WS /realtime`):
+//   - Connect: ws://host:port/v1/realtime?model=<name>
+//   - Send: session.update, then input_audio_buffer.append (base64 PCM16 mono 16kHz)
+//   - Recv: conversation.item.input_audio_transcription.delta (interim)
+//           conversation.item.input_audio_transcription.completed (final)
+//   - Stop: input_audio_buffer.commit, wait for final, close.
+
+const CHUNK_MS = 100;
+const SAMPLE_RATE = 16000;
+
+class LiveTranscriber {
+  constructor({ onInterim, onFinal, onStatus, onError } = {}) {
+    this.onInterim = onInterim || (() => {});
+    this.onFinal = onFinal || (() => {});
+    this.onStatus = onStatus || (() => {});
+    this.onError = onError || (() => {});
+    this.ws = null;
+    this.audioContext = null;
+    this.stream = null;
+    this.processor = null;
+    this.active = false;
+    this.finalText = '';
+  }
+
+  // baseUrl like http://localhost:13305/v1 -> ws://localhost:13305/v1/realtime
+  static wsUrlFromBaseUrl(baseUrl, model) {
+    const url = new URL(baseUrl);
+    const scheme = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${scheme}//${url.host}/v1/realtime?model=${encodeURIComponent(model)}`;
+  }
+
+  async start(baseUrl, model) {
+    const wsUrl = LiveTranscriber.wsUrlFromBaseUrl(baseUrl, model);
+    this.onStatus('Connecting to live stream...');
+
+    this.ws = new WebSocket(wsUrl);
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('WebSocket connect timeout')), 5000);
+      this.ws.onopen = () => { clearTimeout(timer); resolve(); };
+      this.ws.onerror = () => { clearTimeout(timer); reject(new Error('WebSocket connect failed — is the model a streaming (realtime) model?')); };
+    });
+
+    this.ws.onmessage = (event) => this._handleMessage(event);
+    this.ws.onclose = () => { if (this.active) this.onStatus('Live stream disconnected.'); };
+    this.ws.onerror = () => { if (this.active) this.onError('WebSocket error'); };
+
+    this.ws.send(JSON.stringify({ type: 'session.update', session: { model } }));
+    this.active = true;
+    this.finalText = '';
+
+    await this._startMic();
+    this.onStatus('Live — speak now, words appear as you talk.');
+  }
+
+  _handleMessage(event) {
+    let msg;
+    try { msg = JSON.parse(event.data); } catch (_e) { return; }
+    switch (msg.type) {
+      case 'conversation.item.input_audio_transcription.delta':
+        if (typeof msg.delta === 'string' && msg.delta.trim()) {
+          this.onInterim(msg.delta.trim());
+        }
+        break;
+      case 'conversation.item.input_audio_transcription.completed':
+        if (typeof msg.transcript === 'string' && msg.transcript.trim()) {
+          this.finalText = `${this.finalText} ${msg.transcript.trim()}`.trim();
+          this.onFinal(msg.transcript.trim(), this.finalText);
+        }
+        break;
+      case 'input_audio_buffer.speech_started':
+        this.onStatus('Listening...');
+        break;
+      case 'error':
+        this.onError(msg.error?.message || 'Server error');
+        break;
+    }
+  }
+
+  async _startMic() {
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+
+    // Resample to 16kHz mono PCM16 and stream base64 chunks.
+    // ScriptProcessor buffer must be a power of two (256–16384); 4096 @16kHz = 256ms.
+    const source = this.audioContext.createMediaStreamSource(this.stream);
+    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+
+    this.processor.onaudioprocess = (e) => {
+      if (!this.active || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      const samples = e.inputBuffer.getChannelData(0);
+
+      const pcm = new Int16Array(samples.length);
+      for (let i = 0; i < samples.length; i += 1) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      const b64 = this._bytesToBase64(new Uint8Array(pcm.buffer));
+      this.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
+    };
+
+    source.connect(this.processor);
+    this.processor.connect(this.audioContext.destination); // ScriptProcessor needs a destination
+  }
+
+  _bytesToBase64(bytes) {
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  // Stop mic, commit remaining audio, wait briefly for the final transcript.
+  async stop() {
+    this.active = false;
+    if (this.processor) { this.processor.disconnect(); this.processor = null; }
+    if (this.stream) { this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
+    if (this.audioContext) { await this.audioContext.close().catch(() => {}); this.audioContext = null; }
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+      // Give the server a moment to deliver the final transcript.
+      await new Promise((r) => setTimeout(r, 1500));
+      this.ws.close(1000, 'OK');
+    }
+    this.ws = null;
+    this.onStatus('Live session ended.');
+    return this.finalText;
+  }
+}
+
 // Dynamic model picker modal (pattern from Visual Planner ai-model-catalog.js).
 
 let dialog = null;
@@ -562,6 +712,7 @@ async function promptForModel(fetchModels, selectedModel = '') {
 
 const recorder = new MicRecorder();
 let settings = loadSettings();
+let live = null; // LiveTranscriber instance while a live session runs
 
 const $ = (id) => document.getElementById(id);
 
@@ -577,6 +728,7 @@ function refreshProviderUi() {
   $('apiKeyInput').value = settings.apiKey;
   $('baseUrlInput').value = settings.baseUrl || profile.url || '';
   $('modelLabel').textContent = config.model || 'not set';
+  $('liveModelLabel').textContent = settings.liveModel || `${config.model || 'not set'} (same as transcribe)`;
   // Always show both inputs so they can be overridden for any provider.
   $('apiKeyInput').placeholder = profile.apiKeyRequired
     ? 'Paste your API key'
@@ -608,6 +760,25 @@ async function pickModel() {
   }
 }
 
+async function pickLiveModel() {
+  try {
+    const selection = await promptForModel(() => discoverModels(settings), settings.liveModel || settings.model);
+    if (selection) {
+      settings.liveModel = selection.model;
+      saveSettings(settings);
+      refreshProviderUi();
+    }
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+function clearLiveModel() {
+  settings.liveModel = '';
+  saveSettings(settings);
+  refreshProviderUi();
+}
+
 async function toggleRecording() {
   if (!recorder.recording) {
     try {
@@ -626,6 +797,52 @@ async function toggleRecording() {
   $('recordBtn').classList.replace('bg-rose-600', 'bg-brand-600');
   $('statusBar').textContent = 'Transcribing...';
   await runTranscription(blob);
+}
+
+// --- Live mode (Lemonade realtime WebSocket) ---
+
+async function toggleLive() {
+  if (live) {
+    const finalText = await live.stop();
+    live = null;
+    $('liveBtn').textContent = '🔴 Go Live';
+    $('liveBtn').classList.replace('bg-rose-600', 'bg-emerald-600');
+    if (finalText) {
+      $('outputText').value = finalText;
+    }
+    return;
+  }
+
+  const config = resolveProviderConfig(settings);
+  if (!config.baseUrl) {
+    alert('Set the provider Base URL in Settings first (Live mode needs Lemonade or a compatible realtime server).');
+    return;
+  }
+
+  // Live mode uses its own model (e.g. Moonshine-Streaming) when set,
+  // falling back to the transcription model.
+  const liveModel = settings.liveModel || config.model;
+
+  live = new LiveTranscriber({
+    onInterim: (text) => {
+      const base = $('outputText').value;
+      $('outputText').value = base ? `${base} ${text}` : text;
+    },
+    onFinal: (_text, fullText) => {
+      $('outputText').value = fullText;
+    },
+    onStatus: (text) => { $('statusBar').textContent = text; },
+    onError: (message) => { $('statusBar').textContent = `Live error: ${message}`; }
+  });
+
+  try {
+    await live.start(config.baseUrl, liveModel);
+    $('liveBtn').textContent = '⏹ Stop Live';
+    $('liveBtn').classList.replace('bg-emerald-600', 'bg-rose-600');
+  } catch (error) {
+    live = null;
+    alert(`Live mode failed: ${error.message}`);
+  }
 }
 
 async function runTranscription(blob) {
@@ -647,7 +864,10 @@ function wireEvents() {
   $('settingsBtn').addEventListener('click', openSettings);
   $('closeSettingsBtn').addEventListener('click', closeSettings);
   $('pickModelBtn').addEventListener('click', pickModel);
+  $('pickLiveModelBtn').addEventListener('click', pickLiveModel);
+  $('clearLiveModelBtn').addEventListener('click', clearLiveModel);
   $('recordBtn').addEventListener('click', toggleRecording);
+  $('liveBtn').addEventListener('click', toggleLive);
 
   $('copyBtn').addEventListener('click', () => {
     const text = $('outputText').value;
