@@ -30,7 +30,8 @@ async function transcribeWithOpenAiCompatible(config, blob, extension) {
 
   formData.append('file', audioFile);
   formData.append('model', config.model);
-  formData.append('response_format', 'json');
+  // NOTE: no response_format field — Lemonade's whisper endpoint 500s on it.
+  // The working crawler (organize_es.py) sends only model + file.
 
   if (config.apiKey) {
     headers.Authorization = `Bearer ${config.apiKey}`;
