@@ -86,9 +86,121 @@ class ProxyHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self._is_api_path():
-            self._relay("GET")
+            if self._is_websocket_upgrade():
+                self._relay_websocket()
+            else:
+                self._relay("GET")
         else:
             self._serve_app()
+
+    def _is_websocket_upgrade(self) -> bool:
+        return self.headers.get("Upgrade", "").lower() == "websocket"
+
+    def _relay_websocket(self) -> None:
+        """Hand the raw socket to Lemonade's realtime WS endpoint (127.0.0.1:8177-style
+        TCP relay). We perform the upgrade handshake against Lemonade, then splice
+        bytes both directions."""
+        import socket
+
+        target_host = "localhost"
+        target_port = 13305
+        try:
+            upstream = socket.create_connection((target_host, target_port), timeout=10)
+        except Exception as exc:  # noqa: BLE001
+            self.send_response(502)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
+        # Rebuild the raw HTTP upgrade request for Lemonade.
+        lines = [
+            f"GET {self.path} HTTP/1.1",
+            f"Host: {target_host}:{target_port}",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+            f"Sec-WebSocket-Key: {self.headers.get('Sec-WebSocket-Key', '')}",
+            f"Sec-WebSocket-Version: {self.headers.get('Sec-WebSocket-Version', '13')}",
+        ]
+        extensions = self.headers.get("Sec-WebSocket-Extensions")
+        if extensions:
+            lines.append(f"Sec-WebSocket-Extensions: {extensions}")
+        protocol = self.headers.get("Sec-WebSocket-Protocol")
+        if protocol:
+            lines.append(f"Sec-WebSocket-Protocol: {protocol}")
+        raw_request = ("\r\n".join(lines) + "\r\n\r\n").encode("utf-8")
+        upstream.sendall(raw_request)
+
+        # Read the upstream handshake response and forward it verbatim.
+        upstream.settimeout(10)
+        response = b""
+        while b"\r\n\r\n" not in response:
+            chunk = upstream.recv(4096)
+            if not chunk:
+                upstream.close()
+                self.send_response(502)
+                self.end_headers()
+                return
+            response += chunk
+
+        head, _, rest = response.partition(b"\r\n\r\n")
+        status_line = head.split(b"\r\n")[0]
+        try:
+            code = int(status_line.split()[1])
+        except (IndexError, ValueError):
+            code = 502
+        self.send_response(code)
+        for line in head.split(b"\r\n")[1:]:
+            name, _sep, value = line.partition(b":")
+            name_lower = name.strip().lower().decode("utf-8", "replace")
+            if name_lower in ("transfer-encoding", "connection", "upgrade"):
+                continue
+            self.send_header(name.strip().decode("utf-8", "replace"), value.strip().decode("utf-8", "replace"))
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Upgrade", "websocket")
+        self.end_headers()
+
+        if code != 101:
+            if rest:
+                self.wfile.write(rest)
+            upstream.close()
+            return
+
+        # 101 Switching Protocols — splice raw bytes both directions.
+        self.connection.sendall(rest)
+        self.connection.settimeout(None)
+        upstream.settimeout(None)
+        self._splice_sockets(self.connection, upstream)
+        upstream.close()
+
+    def _splice_sockets(self, client_socket, upstream_socket) -> None:
+        """Bidirectional byte relay until either side closes."""
+        import selectors
+
+        selector = selectors.DefaultSelector()
+        client_socket.setblocking(False)
+        upstream_socket.setblocking(False)
+        selector.register(client_socket, selectors.EVENT_READ, data="to_upstream")
+        selector.register(upstream_socket, selectors.EVENT_READ, data="to_client")
+
+        try:
+            while True:
+                for key, _mask in selector.select(timeout=3600):
+                    source = key.fileobj
+                    target = upstream_socket if key.data == "to_upstream" else client_socket
+                    try:
+                        data = source.recv(65536)
+                    except (ConnectionResetError, BrokenPipeError, OSError):
+                        return
+                    if not data:
+                        return
+                    try:
+                        target.sendall(data)
+                    except (ConnectionResetError, BrokenPipeError, OSError):
+                        return
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            selector.close()
 
     def do_POST(self):
         if self._is_api_path():

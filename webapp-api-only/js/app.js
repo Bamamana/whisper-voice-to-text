@@ -113,7 +113,9 @@ async function toggleLive() {
   }
 
   const config = resolveProviderConfig(settings);
-  if (!config.baseUrl) {
+  // Hosted mode intentionally has an empty baseUrl (same-origin relative paths),
+  // so only block providers that genuinely have no route to a realtime server.
+  if (!config.baseUrl && settings.provider !== 'hosted') {
     alert('Set the provider Base URL in Settings first (Live mode needs Lemonade or a compatible realtime server).');
     return;
   }
