@@ -30,6 +30,8 @@ function refreshProviderUi() {
   $('apiKeyInput').placeholder = profile.apiKeyRequired
     ? 'Paste your API key'
     : 'API key (optional for this provider)';
+  // Hosted mode uses same-origin relative paths — no URL to configure.
+  $('baseUrlRow').classList.toggle('hidden', settings.provider === 'hosted');
   updateConnectionBadge(`${profile.label} · ${config.model || 'no model'}`, Boolean(config.model));
 }
 

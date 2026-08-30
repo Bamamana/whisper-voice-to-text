@@ -23,8 +23,15 @@ export class LiveTranscriber {
     this.finalText = '';
   }
 
-  // baseUrl like http://localhost:13305/v1 -> ws://localhost:13305/v1/realtime
+  // baseUrl like http://localhost:13305/v1 -> ws://host/v1/realtime
+  // Empty baseUrl = hosted mode: same-origin, use the current host.
   static wsUrlFromBaseUrl(baseUrl, model) {
+    let host;
+    if (!baseUrl) {
+      host = window.location.host;
+      const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${scheme}//${host}/v1/realtime?model=${encodeURIComponent(model)}`;
+    }
     const url = new URL(baseUrl);
     const scheme = url.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${scheme}//${url.host}/v1/realtime?model=${encodeURIComponent(model)}`;

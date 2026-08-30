@@ -163,6 +163,20 @@ const providerProfiles = {
     apiKeyRequired: false,
     sttModel: 'Whisper-Large-v3-Turbo'
   },
+  lemonadeCloud: {
+    label: 'Lemonade (Cloudflare tunnel)',
+    transport: 'openai',
+    url: 'https://lemonade.classprepped.com/v1',
+    apiKeyRequired: false,
+    sttModel: 'Whisper-Large-v3-Turbo'
+  },
+  lmstudio: {
+    label: 'LM Studio (classprepped)',
+    transport: 'openai',
+    url: 'https://staging-api.classprepped.com/v1',
+    apiKeyRequired: true,
+    sttModel: 'whisper-1'
+  },
   openrouter: {
     label: 'OpenRouter',
     transport: 'openai',
@@ -197,10 +211,17 @@ const providerProfiles = {
     url: '',
     apiKeyRequired: false,
     sttModel: 'whisper-1'
+  },
+  hosted: {
+    label: 'Lemonade (hosted — this server)',
+    transport: 'openai',
+    url: '',
+    apiKeyRequired: false,
+    sttModel: 'Whisper-Large-v3-Turbo'
   }
 };
 
-const PROVIDER_ORDER = ['lemonade', 'openrouter', 'openai', 'gemini', 'lan', 'compatible'];
+const PROVIDER_ORDER = ['hosted', 'lemonade', 'lemonadeCloud', 'lmstudio', 'openrouter', 'openai', 'gemini', 'lan', 'compatible'];
 
 function getProviderProfile(provider) {
   return providerProfiles[provider] || providerProfiles.compatible;
@@ -241,10 +262,13 @@ function saveSettings(settings) {
 
 function resolveProviderConfig(settings) {
   const profile = getProviderProfile(settings.provider);
+  // When the app is served from the hosted server (same origin as the /v1
+  // proxy), "hosted" mode uses relative paths — no CORS, Access cookie applies.
+  const hosted = settings.provider === 'hosted';
   return {
     provider: settings.provider,
     transport: profile.transport,
-    baseUrl: (settings.baseUrl || profile.url || '').replace(/\/$/, ''),
+    baseUrl: hosted ? '' : (settings.baseUrl || profile.url || '').replace(/\/$/, ''),
     apiKey: settings.apiKey || '',
     model: settings.model || profile.sttModel
   };
@@ -374,7 +398,20 @@ class MicRecorder {
 
 
 function normalizeBaseUrl(baseUrl) {
+  // Empty base = same-origin (hosted mode): the app and the /v1 proxy share
+  // an origin, so relative URLs are used directly. The /v1 prefix is part of
+  // the endpoint paths below.
   return String(baseUrl || '').replace(/\/$/, '');
+}
+
+// Build an endpoint URL. In hosted mode (empty base) endpoints are relative
+// and already include /v1; otherwise base already ends with /v1.
+function endpointUrl(config, path) {
+  const base = normalizeBaseUrl(config.baseUrl);
+  if (!base) {
+    return `/v1${path}`;
+  }
+  return `${base}${path}`;
 }
 
 async function ensureJsonResponse(response, label) {
@@ -391,8 +428,22 @@ async function ensureJsonResponse(response, label) {
   return response.json();
 }
 
+// Wrap fetch so DNS/connection failures say what actually happened instead
+// of surfacing as misleading status codes.
+async function fetchOrThrow(url, options, label) {
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    const reason = String(error?.message || error);
+    if (/failed to fetch|name_not_resolved|networkerror/i.test(reason)) {
+      throw new Error(`${label}: could not reach the server (DNS or connection failed). Check the Base URL and your internet connection.`);
+    }
+    throw error;
+  }
+}
+
 async function transcribeWithOpenAiCompatible(config, blob, extension) {
-  const endpoint = `${normalizeBaseUrl(config.baseUrl)}/audio/transcriptions`;
+  const endpoint = endpointUrl(config, '/audio/transcriptions');
   const formData = new FormData();
   const audioFile = new File([blob], `recording-${Date.now()}.${extension}`, { type: blob.type });
   const headers = {};
@@ -471,19 +522,19 @@ async function discoverModels(settings) {
 
   if (transport === 'gemini') {
     const endpoint = `${normalizeBaseUrl(config.baseUrl)}/models?key=${config.apiKey}`;
-    const response = await fetch(endpoint);
+    const response = await fetchOrThrow(endpoint, {}, 'Gemini model discovery');
     const json = await ensureJsonResponse(response, 'Gemini model discovery');
     return (json.models || [])
       .filter((model) => (model.supportedGenerationMethods || []).includes('generateContent'))
       .map((model) => ({ id: model.name.replace(/^models\//, ''), label: model.displayName || model.name }));
   }
 
-  const endpoint = `${normalizeBaseUrl(config.baseUrl)}/models`;
+  const endpoint = endpointUrl(config, '/models');
   const headers = {};
   if (config.apiKey) {
     headers.Authorization = `Bearer ${config.apiKey}`;
   }
-  const response = await fetch(endpoint, { headers });
+  const response = await fetchOrThrow(endpoint, { headers }, 'Model discovery');
   const json = await ensureJsonResponse(response, 'Model discovery');
   return (json.data || [])
     .map((model) => ({ id: model.id, label: model.id }))
@@ -515,8 +566,15 @@ class LiveTranscriber {
     this.finalText = '';
   }
 
-  // baseUrl like http://localhost:13305/v1 -> ws://localhost:13305/v1/realtime
+  // baseUrl like http://localhost:13305/v1 -> ws://host/v1/realtime
+  // Empty baseUrl = hosted mode: same-origin, use the current host.
   static wsUrlFromBaseUrl(baseUrl, model) {
+    let host;
+    if (!baseUrl) {
+      host = window.location.host;
+      const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${scheme}//${host}/v1/realtime?model=${encodeURIComponent(model)}`;
+    }
     const url = new URL(baseUrl);
     const scheme = url.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${scheme}//${url.host}/v1/realtime?model=${encodeURIComponent(model)}`;
@@ -733,6 +791,8 @@ function refreshProviderUi() {
   $('apiKeyInput').placeholder = profile.apiKeyRequired
     ? 'Paste your API key'
     : 'API key (optional for this provider)';
+  // Hosted mode uses same-origin relative paths — no URL to configure.
+  $('baseUrlRow').classList.toggle('hidden', settings.provider === 'hosted');
   updateConnectionBadge(`${profile.label} · ${config.model || 'no model'}`, Boolean(config.model));
 }
 

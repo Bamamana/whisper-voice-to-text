@@ -5,7 +5,20 @@ import { getTransport } from './providers.js';
 import { resolveProviderConfig } from './settings.js';
 
 function normalizeBaseUrl(baseUrl) {
+  // Empty base = same-origin (hosted mode): the app and the /v1 proxy share
+  // an origin, so relative URLs are used directly. The /v1 prefix is part of
+  // the endpoint paths below.
   return String(baseUrl || '').replace(/\/$/, '');
+}
+
+// Build an endpoint URL. In hosted mode (empty base) endpoints are relative
+// and already include /v1; otherwise base already ends with /v1.
+function endpointUrl(config, path) {
+  const base = normalizeBaseUrl(config.baseUrl);
+  if (!base) {
+    return `/v1${path}`;
+  }
+  return `${base}${path}`;
 }
 
 async function ensureJsonResponse(response, label) {
@@ -22,8 +35,22 @@ async function ensureJsonResponse(response, label) {
   return response.json();
 }
 
+// Wrap fetch so DNS/connection failures say what actually happened instead
+// of surfacing as misleading status codes.
+async function fetchOrThrow(url, options, label) {
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    const reason = String(error?.message || error);
+    if (/failed to fetch|name_not_resolved|networkerror/i.test(reason)) {
+      throw new Error(`${label}: could not reach the server (DNS or connection failed). Check the Base URL and your internet connection.`);
+    }
+    throw error;
+  }
+}
+
 async function transcribeWithOpenAiCompatible(config, blob, extension) {
-  const endpoint = `${normalizeBaseUrl(config.baseUrl)}/audio/transcriptions`;
+  const endpoint = endpointUrl(config, '/audio/transcriptions');
   const formData = new FormData();
   const audioFile = new File([blob], `recording-${Date.now()}.${extension}`, { type: blob.type });
   const headers = {};
@@ -102,19 +129,19 @@ export async function discoverModels(settings) {
 
   if (transport === 'gemini') {
     const endpoint = `${normalizeBaseUrl(config.baseUrl)}/models?key=${config.apiKey}`;
-    const response = await fetch(endpoint);
+    const response = await fetchOrThrow(endpoint, {}, 'Gemini model discovery');
     const json = await ensureJsonResponse(response, 'Gemini model discovery');
     return (json.models || [])
       .filter((model) => (model.supportedGenerationMethods || []).includes('generateContent'))
       .map((model) => ({ id: model.name.replace(/^models\//, ''), label: model.displayName || model.name }));
   }
 
-  const endpoint = `${normalizeBaseUrl(config.baseUrl)}/models`;
+  const endpoint = endpointUrl(config, '/models');
   const headers = {};
   if (config.apiKey) {
     headers.Authorization = `Bearer ${config.apiKey}`;
   }
-  const response = await fetch(endpoint, { headers });
+  const response = await fetchOrThrow(endpoint, { headers }, 'Model discovery');
   const json = await ensureJsonResponse(response, 'Model discovery');
   return (json.data || [])
     .map((model) => ({ id: model.id, label: model.id }))

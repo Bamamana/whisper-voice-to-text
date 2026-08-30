@@ -30,10 +30,13 @@ export function saveSettings(settings) {
 
 export function resolveProviderConfig(settings) {
   const profile = getProviderProfile(settings.provider);
+  // When the app is served from the hosted server (same origin as the /v1
+  // proxy), "hosted" mode uses relative paths — no CORS, Access cookie applies.
+  const hosted = settings.provider === 'hosted';
   return {
     provider: settings.provider,
     transport: profile.transport,
-    baseUrl: (settings.baseUrl || profile.url || '').replace(/\/$/, ''),
+    baseUrl: hosted ? '' : (settings.baseUrl || profile.url || '').replace(/\/$/, ''),
     apiKey: settings.apiKey || '',
     model: settings.model || profile.sttModel
   };
