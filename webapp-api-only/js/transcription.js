@@ -64,7 +64,7 @@ async function transcribeWithOpenAiCompatible(config, blob, extension) {
     headers.Authorization = `Bearer ${config.apiKey}`;
   }
 
-  const response = await fetch(endpoint, { method: 'POST', headers, body: formData });
+  const response = await fetchOrThrow(endpoint, { method: 'POST', headers, body: formData }, 'Speech request');
   const json = await ensureJsonResponse(response, 'Speech request');
   const text = json.text || '';
   if (!text.trim()) {
@@ -92,7 +92,7 @@ function blobToBase64(blob) {
 async function transcribeWithGemini(config, blob) {
   const endpoint = `${normalizeBaseUrl(config.baseUrl)}/models/${config.model}:generateContent?key=${config.apiKey}`;
   const base64 = await blobToBase64(blob);
-  const response = await fetch(endpoint, {
+  const response = await fetchOrThrow(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -104,7 +104,7 @@ async function transcribeWithGemini(config, blob) {
       }],
       generationConfig: { temperature: 0 }
     })
-  });
+    }, 'Gemini speech request');
   const json = await ensureJsonResponse(response, 'Gemini speech request');
   const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
   if (!text.trim()) {

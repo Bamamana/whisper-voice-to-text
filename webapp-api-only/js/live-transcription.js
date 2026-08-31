@@ -56,7 +56,14 @@ export class LiveTranscriber {
     this.active = true;
     this.finalText = '';
 
-    await this._startMic();
+    try {
+      await this._startMic();
+    } catch (error) {
+      this.active = false;
+      this.ws.close();
+      this.ws = null;
+      throw error;
+    }
     this.onStatus('Live — speak now, words appear as you talk.');
   }
 

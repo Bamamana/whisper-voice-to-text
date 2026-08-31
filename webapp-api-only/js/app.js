@@ -102,13 +102,10 @@ async function toggleRecording() {
 
 async function toggleLive() {
   if (live) {
-    const finalText = await live.stop();
+    await live.stop();
     live = null;
     $('liveBtn').textContent = '🔴 Go Live';
     $('liveBtn').classList.replace('bg-rose-600', 'bg-emerald-600');
-    if (finalText) {
-      $('outputText').value = finalText;
-    }
     return;
   }
 
@@ -123,14 +120,15 @@ async function toggleLive() {
   // Live mode uses its own model (e.g. Moonshine-Streaming) when set,
   // falling back to the transcription model.
   const liveModel = settings.liveModel || config.model;
+  const transcriptBeforeLive = $('outputText').value.trim();
+  const joinTranscript = (...parts) => parts.filter(Boolean).join(' ').trim();
 
   live = new LiveTranscriber({
     onInterim: (text) => {
-      const base = $('outputText').value;
-      $('outputText').value = base ? `${base} ${text}` : text;
+      $('outputText').value = joinTranscript(transcriptBeforeLive, live.finalText, text);
     },
     onFinal: (_text, fullText) => {
-      $('outputText').value = fullText;
+      $('outputText').value = joinTranscript(transcriptBeforeLive, fullText);
     },
     onStatus: (text) => { $('statusBar').textContent = text; },
     onError: (message) => { $('statusBar').textContent = `Live error: ${message}`; }

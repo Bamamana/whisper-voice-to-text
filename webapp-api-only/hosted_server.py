@@ -12,6 +12,7 @@ Routes:
 import argparse
 import urllib.request
 import urllib.error
+from urllib.parse import urlsplit
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -102,10 +103,20 @@ class ProxyHandler(SimpleHTTPRequestHandler):
         bytes both directions."""
         import socket
 
-        target_host = "localhost"
-        target_port = 13305
+        upstream_url = urlsplit(LEMONADE_BASE)
+        target_host = upstream_url.hostname
+        if not target_host:
+            self.send_response(502)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        target_port = upstream_url.port or (443 if upstream_url.scheme == "https" else 80)
+        target_path = f"{upstream_url.path.rstrip('/')}{self.path}"
         try:
             upstream = socket.create_connection((target_host, target_port), timeout=10)
+            if upstream_url.scheme == "https":
+                import ssl
+                upstream = ssl.create_default_context().wrap_socket(upstream, server_hostname=target_host)
         except Exception as exc:  # noqa: BLE001
             self.send_response(502)
             self.send_header("Content-Length", "0")
@@ -114,7 +125,7 @@ class ProxyHandler(SimpleHTTPRequestHandler):
 
         # Rebuild the raw HTTP upgrade request for Lemonade.
         lines = [
-            f"GET {self.path} HTTP/1.1",
+            f"GET {target_path} HTTP/1.1",
             f"Host: {target_host}:{target_port}",
             "Upgrade: websocket",
             "Connection: Upgrade",
