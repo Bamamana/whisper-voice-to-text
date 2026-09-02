@@ -9,6 +9,18 @@
 const CHUNK_MS = 100;
 const SAMPLE_RATE = 16000;
 
+async function ensureHostedLiveModel(model) {
+  const response = await fetch('/v1/internal/model-load', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_name: model })
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(detail.error || `Could not load ${model} (${response.status}).`);
+  }
+}
+
 export class LiveTranscriber {
   constructor({ onInterim, onFinal, onStatus, onError } = {}) {
     this.onInterim = onInterim || (() => {});
@@ -39,6 +51,10 @@ export class LiveTranscriber {
 
   async start(baseUrl, model) {
     const wsUrl = LiveTranscriber.wsUrlFromBaseUrl(baseUrl, model);
+    if (!baseUrl) {
+      this.onStatus(`Loading ${model}...`);
+      await ensureHostedLiveModel(model);
+    }
     this.onStatus('Connecting to live stream...');
 
     this.ws = new WebSocket(wsUrl);

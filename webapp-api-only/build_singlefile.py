@@ -13,6 +13,7 @@ MODULE_ORDER = [
     "js/transcription.js",
     "js/live-transcription.js",
     "js/model-picker.js",
+    "js/voice-grading.js",
     "js/app.js",
 ]
 

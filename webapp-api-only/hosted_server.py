@@ -12,6 +12,7 @@ Routes:
 import argparse
 import urllib.request
 import urllib.error
+import json
 from urllib.parse import urlsplit
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -19,10 +20,12 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent
 HTML_FILE = APP_DIR.parent / "Whisper-V1-API.html"
 LEMONADE_BASE = "http://localhost:13305"
+LOADABLE_LIVE_MODELS = {"Moonshine-Medium-Streaming", "Whisper-Large-v3-Turbo"}
 
 HOP_BY_HOP = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
+    "origin",
 }
 
 
@@ -39,12 +42,26 @@ class ProxyHandler(SimpleHTTPRequestHandler):
     def _is_api_path(self) -> bool:
         return self.path == "/v1" or self.path.startswith("/v1/")
 
+    def _is_model_load_path(self) -> bool:
+        return self.path == "/v1/internal/model-load"
+
     def _relay(self, method: str) -> None:
-        target = f"{LEMONADE_BASE}{self.path}"
         body = None
         if method in ("POST", "PUT", "PATCH"):
             length = int(self.headers.get("Content-Length", "0") or 0)
             body = self.rfile.read(length) if length else None
+
+        target = f"{LEMONADE_BASE}{self.path}"
+        if self._is_model_load_path():
+            try:
+                model_name = str(json.loads((body or b"{}").decode()).get("model_name", ""))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self._send_json_error(400, "Invalid model load request.")
+                return
+            if model_name not in LOADABLE_LIVE_MODELS:
+                self._send_json_error(400, "This model cannot be loaded through the live transcription app.")
+                return
+            target = f"{LEMONADE_BASE}/api/v1/load"
 
         request = urllib.request.Request(target, data=body, method=method)
         for key, value in self.headers.items():
@@ -77,6 +94,14 @@ class ProxyHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(message)))
             self.end_headers()
             self.wfile.write(message)
+
+    def _send_json_error(self, status: int, message: str) -> None:
+        payload = json.dumps({"error": message}).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
     def _serve_app(self) -> None:
         if self.path in ("/", "/index.html", "/app"):

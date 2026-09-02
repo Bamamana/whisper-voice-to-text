@@ -6,6 +6,7 @@ import { loadSettings, saveSettings, resolveProviderConfig } from './settings.js
 import { providerProfiles, PROVIDER_ORDER, getProviderProfile } from './providers.js';
 import { promptForModel } from './model-picker.js';
 import { LiveTranscriber } from './live-transcription.js';
+import { initializeVoiceGrading } from './voice-grading.js';
 
 const recorder = new MicRecorder();
 let settings = loadSettings();
@@ -25,7 +26,7 @@ function refreshProviderUi() {
   $('apiKeyInput').value = settings.apiKey;
   $('baseUrlInput').value = settings.baseUrl || profile.url || '';
   $('modelLabel').textContent = config.model || 'not set';
-  $('liveModelLabel').textContent = settings.liveModel || `${config.model || 'not set'} (same as transcribe)`;
+  $('liveModelLabel').textContent = settings.liveModel || profile.liveModel || `${config.model || 'not set'} (same as transcribe)`;
   // Always show both inputs so they can be overridden for any provider.
   $('apiKeyInput').placeholder = profile.apiKeyRequired
     ? 'Paste your API key'
@@ -73,7 +74,7 @@ async function pickLiveModel() {
 }
 
 function clearLiveModel() {
-  settings.liveModel = '';
+  settings.liveModel = resolveProviderConfig(settings).model;
   saveSettings(settings);
   refreshProviderUi();
 }
@@ -119,7 +120,7 @@ async function toggleLive() {
 
   // Live mode uses its own model (e.g. Moonshine-Streaming) when set,
   // falling back to the transcription model.
-  const liveModel = settings.liveModel || config.model;
+  const liveModel = settings.liveModel || getProviderProfile(settings.provider).liveModel || config.model;
   const transcriptBeforeLive = $('outputText').value.trim();
   const joinTranscript = (...parts) => parts.filter(Boolean).join(' ').trim();
 
@@ -160,6 +161,8 @@ async function runTranscription(blob) {
 }
 
 function wireEvents() {
+  $('transcriptionTab').addEventListener('click', () => setActiveView('transcription'));
+  $('gradingTab').addEventListener('click', () => setActiveView('grading'));
   $('settingsBtn').addEventListener('click', openSettings);
   $('closeSettingsBtn').addEventListener('click', closeSettings);
   $('pickModelBtn').addEventListener('click', pickModel);
@@ -223,10 +226,23 @@ function wireEvents() {
   });
 }
 
+function setActiveView(view) {
+  const isGrading = view === 'grading';
+  $('transcriptionView').classList.toggle('hidden', isGrading);
+  $('gradingView').classList.toggle('hidden', !isGrading);
+  $('transcriptionTab').className = isGrading
+    ? 'border-b-2 border-transparent px-4 py-3 text-sm font-bold text-slate-500 hover:text-slate-800'
+    : 'border-b-2 border-brand-600 px-4 py-3 text-sm font-bold text-brand-700';
+  $('gradingTab').className = isGrading
+    ? 'border-b-2 border-brand-600 px-4 py-3 text-sm font-bold text-brand-700'
+    : 'border-b-2 border-transparent px-4 py-3 text-sm font-bold text-slate-500 hover:text-slate-800';
+}
+
 function populateProviderSelect() {
   $('providerSelect').replaceChildren(...PROVIDER_ORDER.map((id) => new Option(providerProfiles[id].label, id)));
 }
 
 populateProviderSelect();
 wireEvents();
+initializeVoiceGrading(() => settings);
 refreshProviderUi();

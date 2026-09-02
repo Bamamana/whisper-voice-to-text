@@ -5,7 +5,7 @@ import { getProviderProfile } from './providers.js';
 const STORAGE_KEY = 'wv1api_settings';
 
 export const defaultSettings = {
-  provider: 'lemonade',
+  provider: 'hosted',
   apiKey: '',
   baseUrl: '',
   model: '',

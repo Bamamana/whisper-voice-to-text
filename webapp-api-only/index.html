@@ -47,7 +47,12 @@
     </div>
   </header>
 
-  <main class="flex-1 flex overflow-hidden">
+  <nav class="flex shrink-0 border-b border-slate-300 bg-white px-6" aria-label="Application views">
+    <button id="transcriptionTab" class="border-b-2 border-brand-600 px-4 py-3 text-sm font-bold text-brand-700" type="button">Voice to Text</button>
+    <button id="gradingTab" class="border-b-2 border-transparent px-4 py-3 text-sm font-bold text-slate-500 hover:text-slate-800" type="button">Voice Grading</button>
+  </nav>
+
+  <main id="transcriptionView" class="flex-1 flex overflow-hidden">
     <section class="w-[26rem] bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto shrink-0 p-5 space-y-6">
 
       <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-3">
@@ -100,6 +105,64 @@
       <textarea id="outputText" class="flex-1 w-full resize-none rounded-xl border border-slate-300 bg-white p-4 text-sm text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Your transcript will appear here..." spellcheck="false"></textarea>
       <div id="statusBar" class="text-xs text-slate-500">Ready.</div>
     </section>
+  </main>
+
+  <main id="gradingView" class="hidden min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6">
+    <div class="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[22rem_minmax(0,1fr)]">
+      <section class="space-y-4">
+        <div class="border border-slate-300 bg-white p-4 shadow-sm">
+          <label class="block text-xs font-bold uppercase text-slate-500" for="gradingRosterInput">Roster CSV
+            <input id="gradingRosterInput" class="mt-2 block w-full text-sm text-slate-700" type="file" accept=".csv,text/csv">
+          </label>
+          <p id="gradingRosterStatus" class="mt-2 text-xs text-slate-500">Load a CSV with student names and an optional Period column.</p>
+          <label class="mt-4 block text-xs font-bold uppercase text-slate-500" for="gradingPeriodSelect">Period
+            <select id="gradingPeriodSelect" class="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"></select>
+          </label>
+        </div>
+        <div class="border border-slate-300 bg-white p-4 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-sm font-bold text-slate-800">Grading Model</h2>
+            <button id="loadGradingModelsBtn" class="text-xs font-bold text-brand-700 hover:text-brand-900" type="button">Load models</button>
+          </div>
+          <select id="gradingModelSelect" class="mt-3 block w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
+            <option value="">Select a chat model</option>
+          </select>
+          <p class="mt-2 text-xs text-slate-500">Uses the current provider in Transcription Settings.</p>
+        </div>
+      </section>
+
+      <section class="min-w-0 space-y-4">
+        <div class="border border-slate-300 bg-white p-4 shadow-sm">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <label class="block text-xs font-bold uppercase text-slate-500" for="gradingAssignmentInput">Assignment
+              <input id="gradingAssignmentInput" class="mt-1 block w-full border border-slate-300 px-3 py-2 text-sm text-slate-800" type="text" placeholder="Lab report 2">
+            </label>
+            <div class="flex items-end justify-end">
+              <button id="useTranscriptBtn" class="border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200" type="button">Use current transcript</button>
+            </div>
+          </div>
+          <label class="mt-4 block text-xs font-bold uppercase text-slate-500" for="gradingTranscriptInput">Spoken grade notes
+            <textarea id="gradingTranscriptInput" class="mt-1 block h-40 w-full resize-y border border-slate-300 p-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="For example: Jordan Smith got 18 out of 20 for a strong explanation."></textarea>
+          </label>
+          <div class="mt-4 flex flex-wrap items-center gap-3">
+            <button id="analyzeGradesBtn" class="bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-400" type="button">Analyze grades</button>
+            <button id="exportGradesBtn" class="border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100" type="button">Export CSV</button>
+            <span id="gradingStatus" class="text-xs text-slate-500">Ready for a roster and transcript.</span>
+          </div>
+        </div>
+
+        <div id="gradingWarnings" class="hidden border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"></div>
+        <div class="overflow-x-auto border border-slate-300 bg-white shadow-sm">
+          <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+              <tr><th class="px-3 py-3">Student</th><th class="px-3 py-3">Score</th><th class="px-3 py-3">Notes</th><th class="px-3 py-3">Evidence</th><th class="px-3 py-3">Confidence</th></tr>
+            </thead>
+            <tbody id="gradingResults" class="divide-y divide-slate-200 text-slate-800"></tbody>
+          </table>
+          <p id="gradingEmptyState" class="p-5 text-sm text-slate-500">Grade actions will appear here for review.</p>
+        </div>
+      </section>
+    </div>
   </main>
 
   <!-- Settings modal -->

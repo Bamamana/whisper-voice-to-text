@@ -6,14 +6,16 @@ export const providerProfiles = {
     transport: 'openai',
     url: 'http://localhost:13305/v1',
     apiKeyRequired: false,
-    sttModel: 'Whisper-Large-v3-Turbo'
+    sttModel: 'Whisper-Large-v3-Turbo',
+    liveModel: 'Moonshine-Medium-Streaming'
   },
   lemonadeCloud: {
     label: 'Lemonade (Cloudflare tunnel)',
     transport: 'openai',
     url: 'https://lemonade.classprepped.com/v1',
     apiKeyRequired: false,
-    sttModel: 'Whisper-Large-v3-Turbo'
+    sttModel: 'Whisper-Large-v3-Turbo',
+    liveModel: 'Moonshine-Medium-Streaming'
   },
   lmstudio: {
     label: 'LM Studio (classprepped)',
@@ -62,7 +64,8 @@ export const providerProfiles = {
     transport: 'openai',
     url: '',
     apiKeyRequired: false,
-    sttModel: 'Whisper-Large-v3-Turbo'
+    sttModel: 'Whisper-Large-v3-Turbo',
+    liveModel: 'Moonshine-Medium-Streaming'
   }
 };
 

@@ -47,7 +47,12 @@
     </div>
   </header>
 
-  <main class="flex-1 flex overflow-hidden">
+  <nav class="flex shrink-0 border-b border-slate-300 bg-white px-6" aria-label="Application views">
+    <button id="transcriptionTab" class="border-b-2 border-brand-600 px-4 py-3 text-sm font-bold text-brand-700" type="button">Voice to Text</button>
+    <button id="gradingTab" class="border-b-2 border-transparent px-4 py-3 text-sm font-bold text-slate-500 hover:text-slate-800" type="button">Voice Grading</button>
+  </nav>
+
+  <main id="transcriptionView" class="flex-1 flex overflow-hidden">
     <section class="w-[26rem] bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto shrink-0 p-5 space-y-6">
 
       <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-3">
@@ -100,6 +105,64 @@
       <textarea id="outputText" class="flex-1 w-full resize-none rounded-xl border border-slate-300 bg-white p-4 text-sm text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="Your transcript will appear here..." spellcheck="false"></textarea>
       <div id="statusBar" class="text-xs text-slate-500">Ready.</div>
     </section>
+  </main>
+
+  <main id="gradingView" class="hidden min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6">
+    <div class="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[22rem_minmax(0,1fr)]">
+      <section class="space-y-4">
+        <div class="border border-slate-300 bg-white p-4 shadow-sm">
+          <label class="block text-xs font-bold uppercase text-slate-500" for="gradingRosterInput">Roster CSV
+            <input id="gradingRosterInput" class="mt-2 block w-full text-sm text-slate-700" type="file" accept=".csv,text/csv">
+          </label>
+          <p id="gradingRosterStatus" class="mt-2 text-xs text-slate-500">Load a CSV with student names and an optional Period column.</p>
+          <label class="mt-4 block text-xs font-bold uppercase text-slate-500" for="gradingPeriodSelect">Period
+            <select id="gradingPeriodSelect" class="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"></select>
+          </label>
+        </div>
+        <div class="border border-slate-300 bg-white p-4 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-sm font-bold text-slate-800">Grading Model</h2>
+            <button id="loadGradingModelsBtn" class="text-xs font-bold text-brand-700 hover:text-brand-900" type="button">Load models</button>
+          </div>
+          <select id="gradingModelSelect" class="mt-3 block w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
+            <option value="">Select a chat model</option>
+          </select>
+          <p class="mt-2 text-xs text-slate-500">Uses the current provider in Transcription Settings.</p>
+        </div>
+      </section>
+
+      <section class="min-w-0 space-y-4">
+        <div class="border border-slate-300 bg-white p-4 shadow-sm">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <label class="block text-xs font-bold uppercase text-slate-500" for="gradingAssignmentInput">Assignment
+              <input id="gradingAssignmentInput" class="mt-1 block w-full border border-slate-300 px-3 py-2 text-sm text-slate-800" type="text" placeholder="Lab report 2">
+            </label>
+            <div class="flex items-end justify-end">
+              <button id="useTranscriptBtn" class="border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200" type="button">Use current transcript</button>
+            </div>
+          </div>
+          <label class="mt-4 block text-xs font-bold uppercase text-slate-500" for="gradingTranscriptInput">Spoken grade notes
+            <textarea id="gradingTranscriptInput" class="mt-1 block h-40 w-full resize-y border border-slate-300 p-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="For example: Jordan Smith got 18 out of 20 for a strong explanation."></textarea>
+          </label>
+          <div class="mt-4 flex flex-wrap items-center gap-3">
+            <button id="analyzeGradesBtn" class="bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-400" type="button">Analyze grades</button>
+            <button id="exportGradesBtn" class="border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100" type="button">Export CSV</button>
+            <span id="gradingStatus" class="text-xs text-slate-500">Ready for a roster and transcript.</span>
+          </div>
+        </div>
+
+        <div id="gradingWarnings" class="hidden border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"></div>
+        <div class="overflow-x-auto border border-slate-300 bg-white shadow-sm">
+          <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+              <tr><th class="px-3 py-3">Student</th><th class="px-3 py-3">Score</th><th class="px-3 py-3">Notes</th><th class="px-3 py-3">Evidence</th><th class="px-3 py-3">Confidence</th></tr>
+            </thead>
+            <tbody id="gradingResults" class="divide-y divide-slate-200 text-slate-800"></tbody>
+          </table>
+          <p id="gradingEmptyState" class="p-5 text-sm text-slate-500">Grade actions will appear here for review.</p>
+        </div>
+      </section>
+    </div>
   </main>
 
   <!-- Settings modal -->
@@ -161,14 +224,16 @@ const providerProfiles = {
     transport: 'openai',
     url: 'http://localhost:13305/v1',
     apiKeyRequired: false,
-    sttModel: 'Whisper-Large-v3-Turbo'
+    sttModel: 'Whisper-Large-v3-Turbo',
+    liveModel: 'Moonshine-Medium-Streaming'
   },
   lemonadeCloud: {
     label: 'Lemonade (Cloudflare tunnel)',
     transport: 'openai',
     url: 'https://lemonade.classprepped.com/v1',
     apiKeyRequired: false,
-    sttModel: 'Whisper-Large-v3-Turbo'
+    sttModel: 'Whisper-Large-v3-Turbo',
+    liveModel: 'Moonshine-Medium-Streaming'
   },
   lmstudio: {
     label: 'LM Studio (classprepped)',
@@ -217,7 +282,8 @@ const providerProfiles = {
     transport: 'openai',
     url: '',
     apiKeyRequired: false,
-    sttModel: 'Whisper-Large-v3-Turbo'
+    sttModel: 'Whisper-Large-v3-Turbo',
+    liveModel: 'Moonshine-Medium-Streaming'
   }
 };
 
@@ -237,7 +303,7 @@ function getTransport(provider) {
 const STORAGE_KEY = 'wv1api_settings';
 
 const defaultSettings = {
-  provider: 'lemonade',
+  provider: 'hosted',
   apiKey: '',
   baseUrl: '',
   model: '',
@@ -541,6 +607,38 @@ async function discoverModels(settings) {
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
+async function createChatCompletion(settings, model, prompt) {
+  const config = resolveProviderConfig(settings);
+  if (getTransport(config.provider) !== 'openai') {
+    throw new Error('Voice Grading requires an OpenAI-compatible chat provider.');
+  }
+  if (!model.trim()) {
+    throw new Error('Select a grading model first.');
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.apiKey) {
+    headers.Authorization = `Bearer ${config.apiKey}`;
+  }
+  const response = await fetchOrThrow(endpointUrl(config, '/chat/completions'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+      max_tokens: 1024,
+      response_format: { type: 'json_object' }
+    })
+  }, 'Grade analysis');
+  const json = await ensureJsonResponse(response, 'Grade analysis');
+  const content = json.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    throw new Error('The grading model returned no response.');
+  }
+  return content;
+}
+
 // Live transcription over Lemonade's OpenAI Realtime WebSocket API.
 // Protocol (from lemonade-sdk docs/api/openai.md `WS /realtime`):
 //   - Connect: ws://host:port/v1/realtime?model=<name>
@@ -551,6 +649,18 @@ async function discoverModels(settings) {
 
 const CHUNK_MS = 100;
 const SAMPLE_RATE = 16000;
+
+async function ensureHostedLiveModel(model) {
+  const response = await fetch('/v1/internal/model-load', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_name: model })
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(detail.error || `Could not load ${model} (${response.status}).`);
+  }
+}
 
 class LiveTranscriber {
   constructor({ onInterim, onFinal, onStatus, onError } = {}) {
@@ -582,6 +692,10 @@ class LiveTranscriber {
 
   async start(baseUrl, model) {
     const wsUrl = LiveTranscriber.wsUrlFromBaseUrl(baseUrl, model);
+    if (!baseUrl) {
+      this.onStatus(`Loading ${model}...`);
+      await ensureHostedLiveModel(model);
+    }
     this.onStatus('Connecting to live stream...');
 
     this.ws = new WebSocket(wsUrl);
@@ -772,6 +886,251 @@ async function promptForModel(fetchModels, selectedModel = '') {
   });
 }
 
+
+const GRADE_STORAGE_KEY = 'wv1api_grading_settings';
+const element = (id) => document.getElementById(id);
+
+let roster = [];
+let actions = [];
+
+function loadGradeSettings() {
+  try {
+    return JSON.parse(localStorage.getItem(GRADE_STORAGE_KEY) || '{}');
+  } catch (_error) {
+    return {};
+  }
+}
+
+function saveGradeSettings(settings) {
+  localStorage.setItem(GRADE_STORAGE_KEY, JSON.stringify(settings));
+}
+
+function normalizedHeader(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function parseCsvLine(line) {
+  const fields = [];
+  let value = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"' && line[index + 1] === '"') {
+      value += '"';
+      index += 1;
+    } else if (character === '"') {
+      quoted = !quoted;
+    } else if (character === ',' && !quoted) {
+      fields.push(value.trim());
+      value = '';
+    } else {
+      value += character;
+    }
+  }
+  fields.push(value.trim());
+  return fields;
+}
+
+function parseRosterCsv(text) {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) throw new Error('Roster CSV needs a header and at least one student.');
+  const headers = parseCsvLine(lines[0]).map(normalizedHeader);
+  const indexOf = (...names) => headers.findIndex((header) => names.includes(header));
+  const fullNameIndex = indexOf('studentname', 'fullname', 'fullstudentname', 'name', 'student');
+  const firstNameIndex = indexOf('firstname', 'first', 'studentfirstname', 'givenname');
+  const lastNameIndex = indexOf('lastname', 'last', 'studentlastname', 'surname', 'familyname');
+  const periodIndex = indexOf('period', 'classperiod', 'class', 'section', 'block');
+  if (fullNameIndex < 0 && (firstNameIndex < 0 || lastNameIndex < 0)) {
+    throw new Error('Roster CSV needs Student Name or both First Name and Last Name columns.');
+  }
+
+  return lines.slice(1).map(parseCsvLine).map((fields) => {
+    const fullName = fullNameIndex >= 0 ? fields[fullNameIndex] : '';
+    const firstName = firstNameIndex >= 0 ? fields[firstNameIndex] : '';
+    const lastName = lastNameIndex >= 0 ? fields[lastNameIndex] : '';
+    const name = fullName || [lastName, firstName].filter(Boolean).join(', ');
+    return { name: name.trim(), period: (periodIndex >= 0 ? fields[periodIndex] : '')?.trim() || 'All students' };
+  }).filter((student) => student.name);
+}
+
+function populatePeriods() {
+  const periods = [...new Set(roster.map((student) => student.period))].sort();
+  element('gradingPeriodSelect').replaceChildren(...periods.map((period) => new Option(period, period)));
+  element('gradingPeriodSelect').disabled = periods.length === 0;
+}
+
+function activeStudents() {
+  const period = element('gradingPeriodSelect').value;
+  return roster.filter((student) => student.period === period).map((student) => student.name);
+}
+
+function gradingPrompt(transcript, assignment, period, students) {
+  const rosterText = students.map((name) => `- ${name}`).join('\n');
+  return `You convert teacher grading transcripts into structured grade actions.
+
+Return JSON only. Do not use markdown fences or add commentary.
+
+Context:
+- Assignment: ${assignment}
+- Period: ${period}
+- Remaining unmatched roster:
+${rosterText}
+
+Rules:
+- Extract only grades explicitly present in the transcript.
+- Match spoken names to the closest roster name using spelling, phonetics, initials, and process of elimination.
+- Use the exact roster name in student_name when matched.
+- Do not silently guess between equally plausible students; add a warning instead.
+- Keep notes concise and classroom-appropriate.
+- If there are no actionable grades, return an empty actions array.
+
+Return exactly this JSON object shape:
+{"assignment":"${assignment}","period":"${period}","actions":[{"student_name":"Last, First","score":"18/20","notes":"short note","evidence":"supporting quote","confidence":0.0}],"warnings":["review note"]}
+
+Transcript:
+${transcript}`;
+}
+
+function extractJson(text) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced ? fenced[1] : text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
+  return JSON.parse(candidate);
+}
+
+function normalizeResults(payload) {
+  if (!payload || !Array.isArray(payload.actions) || !Array.isArray(payload.warnings || [])) {
+    throw new Error('The grading model returned an invalid grade format.');
+  }
+  return {
+    actions: payload.actions.map((action) => ({
+      student_name: String(action.student_name || '').trim(),
+      score: String(action.score || '').trim(),
+      notes: String(action.notes || '').trim(),
+      evidence: String(action.evidence || '').trim(),
+      confidence: action.confidence === undefined || action.confidence === null ? '' : String(action.confidence)
+    })).filter((action) => action.student_name && action.score),
+    warnings: payload.warnings.map((warning) => String(warning).trim()).filter(Boolean)
+  };
+}
+
+function cellInput(value, field, rowIndex) {
+  const input = document.createElement('input');
+  input.className = 'w-full border border-slate-200 bg-white px-2 py-1 text-sm';
+  input.value = value;
+  input.addEventListener('input', () => { actions[rowIndex][field] = input.value; });
+  return input;
+}
+
+function renderActions() {
+  const body = element('gradingResults');
+  body.replaceChildren();
+  actions.forEach((action, rowIndex) => {
+    const row = document.createElement('tr');
+    ['student_name', 'score', 'notes', 'evidence', 'confidence'].forEach((field) => {
+      const cell = document.createElement('td');
+      cell.className = 'px-3 py-2 align-top';
+      cell.append(cellInput(action[field], field, rowIndex));
+      row.append(cell);
+    });
+    body.append(row);
+  });
+  element('gradingEmptyState').classList.toggle('hidden', actions.length > 0);
+}
+
+function showWarnings(warnings) {
+  const container = element('gradingWarnings');
+  container.replaceChildren();
+  warnings.forEach((warning) => {
+    const item = document.createElement('p');
+    item.textContent = warning;
+    container.append(item);
+  });
+  container.classList.toggle('hidden', warnings.length === 0);
+}
+
+function downloadCsv() {
+  if (!actions.length) return;
+  const quote = (value) => `"${String(value).replaceAll('"', '""')}"`;
+  const rows = [['Student', 'Score', 'Notes', 'Evidence', 'Confidence'], ...actions.map((action) => [
+    action.student_name, action.score, action.notes, action.evidence, action.confidence
+  ])];
+  const blob = new Blob([rows.map((row) => row.map(quote).join(',')).join('\n')], { type: 'text/csv' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `voice-grades-${Date.now()}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function initializeVoiceGrading(getSettings) {
+  const saved = loadGradeSettings();
+  element('gradingAssignmentInput').value = saved.assignment || '';
+  element('gradingModelSelect').append(new Option(saved.model || 'Select a chat model', saved.model || ''));
+
+  element('gradingRosterInput').addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      roster = parseRosterCsv(await file.text());
+      if (!roster.length) throw new Error('No students were found in this roster.');
+      populatePeriods();
+      element('gradingRosterStatus').textContent = `${roster.length} students loaded.`;
+      element('gradingStatus').textContent = 'Roster ready.';
+    } catch (error) {
+      roster = [];
+      populatePeriods();
+      element('gradingRosterStatus').textContent = error.message;
+    }
+  });
+
+  element('loadGradingModelsBtn').addEventListener('click', async () => {
+    element('gradingStatus').textContent = 'Loading models...';
+    try {
+      const models = await discoverModels(getSettings());
+      const current = element('gradingModelSelect').value;
+      element('gradingModelSelect').replaceChildren(new Option('Select a chat model', ''), ...models.map((model) => new Option(model.label, model.id)));
+      element('gradingModelSelect').value = current;
+      element('gradingStatus').textContent = `${models.length} model(s) available.`;
+    } catch (error) {
+      element('gradingStatus').textContent = `Could not load models: ${error.message}`;
+    }
+  });
+
+  element('useTranscriptBtn').addEventListener('click', () => {
+    element('gradingTranscriptInput').value = element('outputText').value;
+    element('gradingStatus').textContent = 'Current transcript copied.';
+  });
+
+  element('analyzeGradesBtn').addEventListener('click', async () => {
+    const assignment = element('gradingAssignmentInput').value.trim();
+    const transcript = element('gradingTranscriptInput').value.trim();
+    const model = element('gradingModelSelect').value.trim();
+    const students = activeStudents();
+    if (!assignment || !transcript || !model || !students.length) {
+      element('gradingStatus').textContent = 'Add an assignment, transcript, roster, and grading model.';
+      return;
+    }
+    const button = element('analyzeGradesBtn');
+    button.disabled = true;
+    element('gradingStatus').textContent = 'Analyzing grade notes...';
+    try {
+      const response = await createChatCompletion(getSettings(), model, gradingPrompt(transcript, assignment, element('gradingPeriodSelect').value, students));
+      const result = normalizeResults(extractJson(response));
+      actions = result.actions;
+      renderActions();
+      showWarnings(result.warnings);
+      element('gradingStatus').textContent = `${actions.length} grade action(s) ready for review.`;
+      saveGradeSettings({ assignment, model });
+    } catch (error) {
+      element('gradingStatus').textContent = `Analysis failed: ${error.message}`;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  element('exportGradesBtn').addEventListener('click', downloadCsv);
+}
+
 // App wiring for the API-only build.
 
 
@@ -793,7 +1152,7 @@ function refreshProviderUi() {
   $('apiKeyInput').value = settings.apiKey;
   $('baseUrlInput').value = settings.baseUrl || profile.url || '';
   $('modelLabel').textContent = config.model || 'not set';
-  $('liveModelLabel').textContent = settings.liveModel || `${config.model || 'not set'} (same as transcribe)`;
+  $('liveModelLabel').textContent = settings.liveModel || profile.liveModel || `${config.model || 'not set'} (same as transcribe)`;
   // Always show both inputs so they can be overridden for any provider.
   $('apiKeyInput').placeholder = profile.apiKeyRequired
     ? 'Paste your API key'
@@ -841,7 +1200,7 @@ async function pickLiveModel() {
 }
 
 function clearLiveModel() {
-  settings.liveModel = '';
+  settings.liveModel = resolveProviderConfig(settings).model;
   saveSettings(settings);
   refreshProviderUi();
 }
@@ -887,7 +1246,7 @@ async function toggleLive() {
 
   // Live mode uses its own model (e.g. Moonshine-Streaming) when set,
   // falling back to the transcription model.
-  const liveModel = settings.liveModel || config.model;
+  const liveModel = settings.liveModel || getProviderProfile(settings.provider).liveModel || config.model;
   const transcriptBeforeLive = $('outputText').value.trim();
   const joinTranscript = (...parts) => parts.filter(Boolean).join(' ').trim();
 
@@ -928,6 +1287,8 @@ async function runTranscription(blob) {
 }
 
 function wireEvents() {
+  $('transcriptionTab').addEventListener('click', () => setActiveView('transcription'));
+  $('gradingTab').addEventListener('click', () => setActiveView('grading'));
   $('settingsBtn').addEventListener('click', openSettings);
   $('closeSettingsBtn').addEventListener('click', closeSettings);
   $('pickModelBtn').addEventListener('click', pickModel);
@@ -991,12 +1352,25 @@ function wireEvents() {
   });
 }
 
+function setActiveView(view) {
+  const isGrading = view === 'grading';
+  $('transcriptionView').classList.toggle('hidden', isGrading);
+  $('gradingView').classList.toggle('hidden', !isGrading);
+  $('transcriptionTab').className = isGrading
+    ? 'border-b-2 border-transparent px-4 py-3 text-sm font-bold text-slate-500 hover:text-slate-800'
+    : 'border-b-2 border-brand-600 px-4 py-3 text-sm font-bold text-brand-700';
+  $('gradingTab').className = isGrading
+    ? 'border-b-2 border-brand-600 px-4 py-3 text-sm font-bold text-brand-700'
+    : 'border-b-2 border-transparent px-4 py-3 text-sm font-bold text-slate-500 hover:text-slate-800';
+}
+
 function populateProviderSelect() {
   $('providerSelect').replaceChildren(...PROVIDER_ORDER.map((id) => new Option(providerProfiles[id].label, id)));
 }
 
 populateProviderSelect();
 wireEvents();
+initializeVoiceGrading(() => settings);
 refreshProviderUi();
 </script>
 </body>

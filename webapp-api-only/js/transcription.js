@@ -147,3 +147,35 @@ export async function discoverModels(settings) {
     .map((model) => ({ id: model.id, label: model.id }))
     .sort((a, b) => a.id.localeCompare(b.id));
 }
+
+export async function createChatCompletion(settings, model, prompt) {
+  const config = resolveProviderConfig(settings);
+  if (getTransport(config.provider) !== 'openai') {
+    throw new Error('Voice Grading requires an OpenAI-compatible chat provider.');
+  }
+  if (!model.trim()) {
+    throw new Error('Select a grading model first.');
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.apiKey) {
+    headers.Authorization = `Bearer ${config.apiKey}`;
+  }
+  const response = await fetchOrThrow(endpointUrl(config, '/chat/completions'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+      max_tokens: 1024,
+      response_format: { type: 'json_object' }
+    })
+  }, 'Grade analysis');
+  const json = await ensureJsonResponse(response, 'Grade analysis');
+  const content = json.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    throw new Error('The grading model returned no response.');
+  }
+  return content;
+}
