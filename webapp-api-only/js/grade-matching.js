@@ -91,7 +91,7 @@ function candidateFor(spokenName, studentNames) {
 
 function extractAction(unit, studentNames) {
   if (WHOLE_CLASS.test(unit)) return null;
-  const match = /^(.+?)(?:,?\s+(?:you\s+)?(?:gets?|got|has|earned|earns|receiv(?:e|es|ed)|scored?|score|was|is)\s+)(.+)$/i.exec(unit) || /^(.+?)(?:,?\s+)(\d+(?:\.\d+)?\s*(?:\/|out of)\s*\d+(?:\.\d+)?\b.*)$/i.exec(unit);
+  const match = /^(?:change|update|correct)\s+(.+?)\s+(?:to|as)\s+(.+)$/i.exec(unit) || /^(.+?)(?:,?\s+(?:you\s+)?(?:gets?|got|has|earned|earns|receiv(?:e|es|ed)|scored?|score|was|is)\s+)(.+)$/i.exec(unit) || /^(.+?)(?:,?\s+)(\d+(?:\.\d+)?\s*(?:\/|out of)\s*\d+(?:\.\d+)?\b.*)$/i.exec(unit) || /^(.+?)[.!?]\s+(.+)$/i.exec(unit);
   if (!match) return null;
   const score = scoreAndNotes(match[2]); const candidate = score && candidateFor(match[1].trim(), studentNames);
   return candidate ? { student_name: candidate.studentName, score: score.score, notes: score.notes, evidence: unit, confidence: candidate.confidence } : null;
@@ -99,10 +99,16 @@ function extractAction(unit, studentNames) {
 
 export function matchClearGrades(transcript, studentNames) {
   const actions = []; const unresolved = []; const matchedNames = new Set();
-  transcript.replace(/\r?\n/g, '. ').split(/(?<=[.!?])\s+/).map((unit) => unit.trim()).filter(Boolean).forEach((unit) => {
-    const action = extractAction(unit, studentNames.filter((name) => !matchedNames.has(name)));
-    if (action) { actions.push(action); matchedNames.add(action.student_name); } else unresolved.push(unit);
-  });
+  const units = transcript.replace(/\r?\n/g, '. ').split(/(?<=[.!?])\s+/).map((unit) => unit.trim()).filter(Boolean);
+  for (let index = 0; index < units.length; index += 1) {
+    const students = studentNames.filter((name) => !matchedNames.has(name));
+    let action = extractAction(units[index], students);
+    if (!action && units[index + 1]) {
+      action = extractAction(`${units[index]} ${units[index + 1]}`, students);
+      if (action) index += 1;
+    }
+    if (action) { actions.push(action); matchedNames.add(action.student_name); } else unresolved.push(units[index]);
+  }
   return { actions, unresolved, matchedNames };
 }
 

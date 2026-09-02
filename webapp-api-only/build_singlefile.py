@@ -15,6 +15,9 @@ MODULE_ORDER = [
     "js/model-picker.js",
     "js/canvas-gradebook.js",
     "js/grade-matching.js",
+    "js/grading-session.js",
+    "js/grade-exports.js",
+    "js/grade-ui.js",
     "js/voice-grading.js",
     "js/app.js",
 ]

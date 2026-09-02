@@ -110,8 +110,9 @@ export function buildCanvasGradebookCsv(template, assignmentHeader, actions) {
   template.students.forEach((student) => {
     const action = byStudent.get(String(student.Student || '').trim().toLowerCase());
     const score = action?.score.trim() ? canvasScore(action.score, assignment.pointsPossible) : null;
-    if (action?.score.trim() && score === null) {
-      throw new Error(`${action.student_name} has a score Canvas cannot import: ${action.score}`);
+    const maximum = numeric(assignment.pointsPossible);
+    if (action?.score.trim() && (score === null || numeric(score) < 0 || (maximum !== null && numeric(score) > maximum))) {
+      throw new Error(`${action.student_name} has a score outside this assignment's valid range: ${action.score}`);
     }
     const row = { ...student };
     if (score !== null) {

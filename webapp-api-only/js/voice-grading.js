@@ -2,6 +2,9 @@ import { MicRecorder, blobToWav } from './audio.js';
 import { createChatCompletion, discoverModels, transcribeBlob } from './transcription.js';
 import { buildCanvasGradebookCsv, parseCanvasGradebook } from './canvas-gradebook.js';
 import { matchClearGrades, remainingStudents } from './grade-matching.js';
+import { clearGradeSession, loadGradeSession, saveGradeSession } from './grading-session.js';
+import { downloadFile, exportChangedGrades, exportGradeActions, exportGradeAudit } from './grade-exports.js';
+import { recordAudit, scoreIssue, updateProgress } from './grade-ui.js';
 
 const GRADE_STORAGE_KEY = 'wv1api_grading_settings';
 const element = (id) => document.getElementById(id);
@@ -11,6 +14,8 @@ let actions = [];
 let canvasGradebook = null;
 let unresolvedNotes = [];
 let locallyMatchedNames = new Set();
+let changedStudentNames = new Set();
+let auditLog = [];
 const gradingRecorder = new MicRecorder();
 
 function loadGradeSettings() {
@@ -23,6 +28,18 @@ function loadGradeSettings() {
 
 function saveGradeSettings(settings) {
   localStorage.setItem(GRADE_STORAGE_KEY, JSON.stringify(settings));
+}
+
+function persistSession() {
+  saveGradeSession({
+    roster, actions, canvasGradebook, unresolvedNotes, auditLog,
+    locallyMatchedNames: [...locallyMatchedNames], changedStudentNames: [...changedStudentNames],
+    transcript: element('gradingTranscriptInput').value,
+    period: element('gradingPeriodSelect').value,
+    assignment: element('gradingAssignmentInput').value,
+    assignmentHeader: element('canvasAssignmentSelect').value,
+    model: element('gradingModelSelect').value
+  });
 }
 
 function normalizedHeader(value) {
@@ -98,18 +115,29 @@ function seedGradeRows() {
     confidence: ''
   }));
   renderActions();
+  persistSession();
 }
 
-function applyGradeActions(newActions) {
+function applyGradeActions(newActions, source = 'Local matching') {
   const byStudent = new Map(actions.map((action) => [action.student_name.toLowerCase(), action]));
+  const warnings = [];
   newActions.forEach((newAction) => {
     const existing = byStudent.get(newAction.student_name.toLowerCase());
     if (existing) {
+      const previousScore = existing.score;
+      if (previousScore && previousScore !== newAction.score) warnings.push(`${newAction.student_name}: replaced ${previousScore} with ${newAction.score}.`);
+      if (previousScore !== newAction.score) {
+        changedStudentNames.add(newAction.student_name);
+        recordAudit(auditLog, newAction, source, previousScore);
+      }
       Object.assign(existing, newAction);
     } else {
       actions.push(newAction);
+      changedStudentNames.add(newAction.student_name);
+      recordAudit(auditLog, newAction, source);
     }
   });
+  return warnings;
 }
 
 function completedStudentNames() {
@@ -167,11 +195,22 @@ function normalizeResults(payload) {
   };
 }
 
-function cellInput(value, field, rowIndex) {
+function cellInput(value, field, rowIndex, action) {
   const input = document.createElement('input');
-  input.className = 'w-full border border-slate-200 bg-white px-2 py-1 text-sm';
+  const issue = field === 'score' ? scoreIssue(canvasGradebook, element('canvasAssignmentSelect').value, value) : '';
+  input.className = `w-full border bg-white px-2 py-1 text-sm ${issue ? 'border-rose-500' : 'border-slate-200'}`;
   input.value = value;
+  input.title = issue;
+  input.dataset.originalValue = value;
   input.addEventListener('input', () => { actions[rowIndex][field] = input.value; });
+  input.addEventListener('change', () => {
+    if (field === 'score' && input.dataset.originalValue !== input.value) {
+      changedStudentNames.add(action.student_name);
+      recordAudit(auditLog, { ...action, score: input.value }, 'Manual edit', input.dataset.originalValue);
+      renderActions();
+    }
+    persistSession();
+  });
   return input;
 }
 
@@ -180,15 +219,17 @@ function renderActions() {
   body.replaceChildren();
   actions.forEach((action, rowIndex) => {
     const row = document.createElement('tr');
+    if (changedStudentNames.has(action.student_name)) row.className = 'bg-emerald-50';
     ['student_name', 'score', 'notes', 'evidence', 'confidence'].forEach((field) => {
       const cell = document.createElement('td');
       cell.className = 'px-3 py-2 align-top';
-      cell.append(cellInput(action[field], field, rowIndex));
+      cell.append(cellInput(action[field], field, rowIndex, action));
       row.append(cell);
     });
     body.append(row);
   });
   element('gradingEmptyState').classList.toggle('hidden', actions.length > 0);
+  updateProgress(element('gradingProgress'), activeStudents().length, actions.filter((action) => action.score.trim()).length);
 }
 
 function showWarnings(warnings) {
@@ -213,10 +254,21 @@ function showUnresolved() {
   heading.className = 'mb-2 text-xs font-bold uppercase text-slate-500';
   heading.textContent = `${unresolvedNotes.length} note(s) need review or AI matching`;
   container.append(heading);
-  unresolvedNotes.forEach((note) => {
-    const item = document.createElement('p');
+  unresolvedNotes.forEach((note, index) => {
+    const item = document.createElement('div');
     item.className = 'border-t border-slate-100 py-2';
-    item.textContent = note;
+    const text = document.createElement('p');
+    text.textContent = note;
+    const controls = document.createElement('div');
+    controls.className = 'mt-2 flex gap-2';
+    const edit = document.createElement('button');
+    edit.type = 'button'; edit.className = 'text-xs font-bold text-brand-700'; edit.textContent = 'Edit note';
+    edit.addEventListener('click', () => { element('gradingTranscriptInput').value = note; element('gradingTranscriptInput').focus(); });
+    const reviewed = document.createElement('button');
+    reviewed.type = 'button'; reviewed.className = 'text-xs font-bold text-slate-600'; reviewed.textContent = 'Mark reviewed';
+    reviewed.addEventListener('click', () => { unresolvedNotes.splice(index, 1); showUnresolved(); persistSession(); });
+    controls.append(edit, reviewed);
+    item.append(text, controls);
     container.append(item);
   });
   container.classList.remove('hidden');
@@ -228,7 +280,8 @@ function runClearMatching(transcriptOverride = '') {
     : element('gradingTranscriptInput').value;
   const transcript = transcriptSource.trim();
   const completedNames = completedStudentNames();
-  const students = remainingStudents(activeStudents(), completedNames);
+  const correction = /\b(?:change|update|correct)\b/i.test(transcript);
+  const students = correction ? activeStudents() : remainingStudents(activeStudents(), completedNames);
   if (!transcript || !students.length) {
     element('gradingStatus').textContent = students.length ? 'Load a roster and add grade notes first.' : 'All students in this period already have grades.';
     return false;
@@ -236,34 +289,13 @@ function runClearMatching(transcriptOverride = '') {
   const result = matchClearGrades(transcript, students);
   locallyMatchedNames = new Set([...completedNames, ...result.matchedNames]);
   unresolvedNotes = result.unresolved;
-  applyGradeActions(result.actions);
+  const replacementWarnings = applyGradeActions(result.actions, correction ? 'Voice correction' : 'Local matching');
   renderActions();
   showUnresolved();
-  showWarnings(unresolvedNotes.length ? ['Only high-confidence exact roster matches were applied locally. Review the notes below or send them to AI.'] : []);
+  showWarnings([...replacementWarnings, ...(unresolvedNotes.length ? ['Only high-confidence exact roster matches were applied locally. Review the notes below or send them to AI.'] : [])]);
   element('gradingStatus').textContent = `${result.actions.length} clear grade(s) matched locally; ${unresolvedNotes.length} note(s) remain.`;
+  persistSession();
   return true;
-}
-
-function downloadCsv() {
-  if (!actions.length) return;
-  const quote = (value) => `"${String(value).replaceAll('"', '""')}"`;
-  const rows = [['Student', 'Score', 'Notes', 'Evidence', 'Confidence'], ...actions.map((action) => [
-    action.student_name, action.score, action.notes, action.evidence, action.confidence
-  ])];
-  const blob = new Blob([rows.map((row) => row.map(quote).join(',')).join('\n')], { type: 'text/csv' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `voice-grades-${Date.now()}.csv`;
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-
-function downloadFile(content, filename, type) {
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(new Blob([content], { type }));
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(link.href);
 }
 
 function populateCanvasAssignments() {
@@ -286,15 +318,37 @@ export function initializeVoiceGrading(getSettings) {
   element('gradingAssignmentInput').value = saved.assignment || '';
   element('gradingModelSelect').append(new Option(saved.model || 'Select a chat model', saved.model || ''));
 
+  const session = loadGradeSession();
+  if (session?.roster?.length) {
+    roster = session.roster;
+    actions = session.actions || [];
+    canvasGradebook = session.canvasGradebook || null;
+    unresolvedNotes = session.unresolvedNotes || [];
+    auditLog = session.auditLog || [];
+    locallyMatchedNames = new Set(session.locallyMatchedNames || []);
+    changedStudentNames = new Set(session.changedStudentNames || []);
+    populatePeriods();
+    if (canvasGradebook) populateCanvasAssignments();
+    element('gradingPeriodSelect').value = session.period || element('gradingPeriodSelect').value;
+    element('canvasAssignmentSelect').value = session.assignmentHeader || element('canvasAssignmentSelect').value;
+    element('gradingAssignmentInput').value = session.assignment || element('gradingAssignmentInput').value;
+    element('gradingTranscriptInput').value = session.transcript || '';
+    renderActions(); showUnresolved();
+    element('gradingStatus').textContent = 'Recovered your saved grading session.';
+  }
+
   element('gradingRosterInput').addEventListener('change', async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
       roster = parseRosterCsv(await file.text());
+      actions = []; canvasGradebook = null; unresolvedNotes = []; locallyMatchedNames = new Set(); changedStudentNames = new Set(); auditLog = [];
       if (!roster.length) throw new Error('No students were found in this roster.');
       populatePeriods();
+      renderActions();
       element('gradingRosterStatus').textContent = `${roster.length} students loaded.`;
       element('gradingStatus').textContent = 'Roster ready.';
+      persistSession();
     } catch (error) {
       roster = [];
       populatePeriods();
@@ -307,6 +361,7 @@ export function initializeVoiceGrading(getSettings) {
     if (!file) return;
     try {
       canvasGradebook = parseCanvasGradebook(await file.text());
+      unresolvedNotes = []; locallyMatchedNames = new Set(); changedStudentNames = new Set(); auditLog = [];
       roster = canvasGradebook.students.map((student) => ({
         name: String(student.Student || '').trim(),
         period: String(student.Section || '').trim() || 'Canvas Import'
@@ -351,8 +406,11 @@ export function initializeVoiceGrading(getSettings) {
 
   element('useTranscriptBtn').addEventListener('click', () => {
     element('gradingTranscriptInput').value = element('outputText').value;
+    persistSession();
     element('gradingStatus').textContent = 'Current transcript copied.';
   });
+
+  element('gradingTranscriptInput').addEventListener('input', persistSession);
 
   element('gradingRecordBtn').addEventListener('click', async () => {
     const button = element('gradingRecordBtn');
@@ -405,13 +463,15 @@ export function initializeVoiceGrading(getSettings) {
     try {
       const response = await createChatCompletion(getSettings(), model, gradingPrompt(transcript, assignment, element('gradingPeriodSelect').value, students));
       const result = normalizeResults(extractJson(response));
-      applyGradeActions(result.actions);
+      const replacementWarnings = applyGradeActions(result.actions, 'AI review');
+      locallyMatchedNames = completedStudentNames();
       unresolvedNotes = [];
       renderActions();
       showUnresolved();
-      showWarnings(result.warnings);
+      showWarnings([...replacementWarnings, ...result.warnings]);
       element('gradingStatus').textContent = `${actions.length} grade action(s) ready for review.`;
       saveGradeSettings({ assignment, model });
+      persistSession();
     } catch (error) {
       element('gradingStatus').textContent = `Analysis failed: ${error.message}`;
     } finally {
@@ -419,7 +479,15 @@ export function initializeVoiceGrading(getSettings) {
     }
   });
 
-  element('exportGradesBtn').addEventListener('click', downloadCsv);
+  element('exportGradesBtn').addEventListener('click', () => exportGradeActions(actions));
+  element('exportChangedGradesBtn').addEventListener('click', () => exportChangedGrades(actions, changedStudentNames));
+  element('exportAuditBtn').addEventListener('click', () => exportGradeAudit(auditLog));
+  element('clearGradingSessionBtn').addEventListener('click', () => {
+    if (!window.confirm('Clear this saved grading session?')) return;
+    clearGradeSession(); roster = []; actions = []; canvasGradebook = null; unresolvedNotes = []; locallyMatchedNames = new Set(); changedStudentNames = new Set(); auditLog = [];
+    populatePeriods(); populateCanvasAssignments(); element('gradingTranscriptInput').value = ''; renderActions(); showUnresolved();
+    element('gradingStatus').textContent = 'Saved grading session cleared.';
+  });
   element('exportCanvasBtn').addEventListener('click', () => {
     try {
       if (!canvasGradebook) throw new Error('Import a Canvas gradebook first.');
