@@ -168,7 +168,7 @@ export async function createChatCompletion(settings, model, prompt) {
       model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
-      max_tokens: 1024,
+      max_tokens: 4096,
       response_format: { type: 'json_object' }
     })
   }, 'Grade analysis');

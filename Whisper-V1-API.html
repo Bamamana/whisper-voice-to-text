@@ -115,6 +115,11 @@
             <input id="gradingRosterInput" class="mt-2 block w-full text-sm text-slate-700" type="file" accept=".csv,text/csv">
           </label>
           <p id="gradingRosterStatus" class="mt-2 text-xs text-slate-500">Load a CSV with student names and an optional Period column.</p>
+          <div class="my-4 border-t border-slate-200"></div>
+          <label class="block text-xs font-bold uppercase text-slate-500" for="canvasGradebookInput">Canvas gradebook CSV
+            <input id="canvasGradebookInput" class="mt-2 block w-full text-sm text-slate-700" type="file" accept=".csv,text/csv">
+          </label>
+          <p id="canvasGradebookStatus" class="mt-2 text-xs text-slate-500">Canvas imports stay in this browser and replace the roster above.</p>
           <label class="mt-4 block text-xs font-bold uppercase text-slate-500" for="gradingPeriodSelect">Period
             <select id="gradingPeriodSelect" class="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"></select>
           </label>
@@ -137,6 +142,11 @@
             <label class="block text-xs font-bold uppercase text-slate-500" for="gradingAssignmentInput">Assignment
               <input id="gradingAssignmentInput" class="mt-1 block w-full border border-slate-300 px-3 py-2 text-sm text-slate-800" type="text" placeholder="Lab report 2">
             </label>
+            <label class="block text-xs font-bold uppercase text-slate-500" for="canvasAssignmentSelect">Canvas assignment
+              <select id="canvasAssignmentSelect" class="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800" disabled>
+                <option value="">Import a Canvas gradebook</option>
+              </select>
+            </label>
             <div class="flex items-end justify-end">
               <button id="useTranscriptBtn" class="border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200" type="button">Use current transcript</button>
             </div>
@@ -145,13 +155,17 @@
             <textarea id="gradingTranscriptInput" class="mt-1 block h-40 w-full resize-y border border-slate-300 p-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="For example: Jordan Smith got 18 out of 20 for a strong explanation."></textarea>
           </label>
           <div class="mt-4 flex flex-wrap items-center gap-3">
-            <button id="analyzeGradesBtn" class="bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-400" type="button">Analyze grades</button>
-            <button id="exportGradesBtn" class="border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100" type="button">Export CSV</button>
+            <button id="gradingRecordBtn" class="bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-slate-400" type="button">Start recording</button>
+            <button id="matchClearGradesBtn" class="bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-400" type="button">Match clear grades</button>
+            <button id="analyzeGradesBtn" class="border border-brand-600 bg-white px-4 py-2 text-sm font-bold text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400" type="button">Analyze unresolved with AI</button>
+            <button id="exportGradesBtn" class="border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100" type="button">Export grade actions</button>
+            <button id="exportCanvasBtn" class="border border-emerald-700 bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800" type="button">Export Canvas CSV</button>
             <span id="gradingStatus" class="text-xs text-slate-500">Ready for a roster and transcript.</span>
           </div>
         </div>
 
         <div id="gradingWarnings" class="hidden border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"></div>
+        <div id="gradingUnresolved" class="hidden border border-slate-300 bg-white p-4 text-sm text-slate-700 shadow-sm"></div>
         <div class="overflow-x-auto border border-slate-300 bg-white shadow-sm">
           <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
             <thead class="bg-slate-100 text-xs uppercase text-slate-600">
@@ -627,7 +641,7 @@ async function createChatCompletion(settings, model, prompt) {
       model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
-      max_tokens: 1024,
+      max_tokens: 4096,
       response_format: { type: 'json_object' }
     })
   }, 'Grade analysis');
@@ -886,12 +900,194 @@ async function promptForModel(fetchModels, selectedModel = '') {
   });
 }
 
+const ASSIGNMENT_HEADER = /^(.+?)\s+\((\d+)\)\s*$/;
+
+function parseCanvasCsvLine(line) {
+  const fields = [];
+  let value = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"' && line[index + 1] === '"') {
+      value += '"';
+      index += 1;
+    } else if (character === '"') {
+      quoted = !quoted;
+    } else if (character === ',' && !quoted) {
+      fields.push(value);
+      value = '';
+    } else {
+      value += character;
+    }
+  }
+  fields.push(value);
+  return fields;
+}
+
+function csvRows(text) {
+  const rows = [];
+  let row = '';
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === '"') {
+      row += character;
+      if (text[index + 1] === '"') {
+        row += text[index + 1];
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if ((character === '\n' || character === '\r') && !quoted) {
+      if (row.trim()) rows.push(parseCanvasCsvLine(row).map((value) => value.trim()));
+      row = '';
+      if (character === '\r' && text[index + 1] === '\n') index += 1;
+    } else {
+      row += character;
+    }
+  }
+  if (row.trim()) rows.push(parseCanvasCsvLine(row).map((value) => value.trim()));
+  return rows;
+}
+
+function rowObject(headers, fields) {
+  return Object.fromEntries(headers.map((header, index) => [header, fields[index] || '']));
+}
+
+function pointsRow(row) {
+  return String(row?.Student || '').trim().toLowerCase() === 'points possible';
+}
+
+function parseCanvasGradebook(text) {
+  const rows = csvRows(text);
+  if (rows.length < 2) throw new Error('Canvas export needs a header and at least one row.');
+  const headers = rows[0];
+  const assignments = headers.map((header) => {
+    const match = header.match(ASSIGNMENT_HEADER);
+    return match ? { header, name: match[1].trim(), id: match[2] } : null;
+  }).filter(Boolean);
+  if (!assignments.length) throw new Error('No Canvas assignment columns were found. Export the Canvas gradebook as CSV.');
+
+  const dataRows = rows.slice(1).map((fields) => rowObject(headers, fields));
+  const pointsPossible = pointsRow(dataRows[0]) ? dataRows.shift() : null;
+  assignments.forEach((assignment) => {
+    assignment.pointsPossible = String(pointsPossible?.[assignment.header] || '').trim();
+  });
+  const students = dataRows.filter((row) => String(row.Student || '').trim());
+  if (!students.length) throw new Error('No student rows were found in this Canvas export.');
+  return { headers, pointsPossible, students, assignments };
+}
+
+function numeric(value) {
+  const number = Number.parseFloat(String(value || '').trim());
+  return Number.isFinite(number) ? number : null;
+}
+
+function canvasScore(score, pointsPossible) {
+  const value = String(score || '').trim();
+  const slash = value.match(/^(\d+(?:\.\d+)?)\s*(?:\/|out of)\s*(\d+(?:\.\d+)?)$/i);
+  if (slash) {
+    const earned = Number.parseFloat(slash[1]);
+    const denominator = Number.parseFloat(slash[2]);
+    const canvasPoints = numeric(pointsPossible);
+    if (canvasPoints !== null && denominator > 0) {
+      return ((earned / denominator) * canvasPoints).toFixed(2);
+    }
+  }
+  const plainNumber = numeric(value);
+  return plainNumber === null ? null : plainNumber.toFixed(2);
+}
+
+function quoteCsv(value) {
+  return `"${String(value || '').replaceAll('"', '""')}"`;
+}
+
+function buildCanvasGradebookCsv(template, assignmentHeader, actions) {
+  const assignment = template.assignments.find((item) => item.header === assignmentHeader);
+  if (!assignment) throw new Error('Choose a Canvas assignment before exporting.');
+  const byStudent = new Map(actions.map((action) => [action.student_name.trim().toLowerCase(), action]));
+  let updated = 0;
+  const outputRows = [];
+  if (template.pointsPossible) outputRows.push(template.pointsPossible);
+  template.students.forEach((student) => {
+    const action = byStudent.get(String(student.Student || '').trim().toLowerCase());
+    const score = action?.score.trim() ? canvasScore(action.score, assignment.pointsPossible) : null;
+    if (action?.score.trim() && score === null) {
+      throw new Error(`${action.student_name} has a score Canvas cannot import: ${action.score}`);
+    }
+    const row = { ...student };
+    if (score !== null) {
+      row[assignmentHeader] = score;
+      updated += 1;
+    }
+    outputRows.push(row);
+  });
+  const lines = [template.headers, ...outputRows.map((row) => template.headers.map((header) => row[header] || ''))]
+    .map((row) => row.map(quoteCsv).join(','));
+  return { csv: lines.join('\n'), updated, assignment: assignment.name };
+}
+
+function normalized(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function escapePattern(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function scoreFromUnit(unit) {
+  const score = unit.match(/\b(\d+(?:\.\d+)?)\s*(?:\/|out of)\s*(\d+(?:\.\d+)?)\b/i);
+  return score ? `${score[1]}/${score[2]}` : '';
+}
+
+function transcriptUnits(transcript) {
+  return transcript.split(/(?:\r?\n|(?<=[.!?])\s+)/).map((unit) => unit.trim()).filter(Boolean);
+}
+
+function matchClearGrades(transcript, studentNames) {
+  const actions = [];
+  const unresolved = [];
+  const matchedNames = new Set();
+  const studentPatterns = studentNames.map((studentName) => ({
+    studentName,
+    pattern: new RegExp(`\\b${escapePattern(studentName).replace(/\\,\\s*/g, '\\s*,?\\s*')}\\b`, 'i')
+  }));
+
+  transcriptUnits(transcript).forEach((unit) => {
+    const score = scoreFromUnit(unit);
+    const matches = studentPatterns.filter(({ pattern }) => pattern.test(unit));
+    if (score && matches.length === 1 && !matchedNames.has(matches[0].studentName)) {
+      const studentName = matches[0].studentName;
+      actions.push({
+        student_name: studentName,
+        score,
+        notes: '',
+        evidence: unit,
+        confidence: 'High (local exact match)'
+      });
+      matchedNames.add(studentName);
+    } else {
+      unresolved.push(unit);
+    }
+  });
+
+  return { actions, unresolved, matchedNames };
+}
+
+function remainingStudents(studentNames, matchedNames) {
+  return studentNames.filter((studentName) => !matchedNames.has(studentName));
+}
+
 
 const GRADE_STORAGE_KEY = 'wv1api_grading_settings';
 const element = (id) => document.getElementById(id);
 
 let roster = [];
 let actions = [];
+let canvasGradebook = null;
+let unresolvedNotes = [];
+let locallyMatchedNames = new Set();
+const gradingRecorder = new MicRecorder();
 
 function loadGradeSettings() {
   try {
@@ -962,6 +1158,34 @@ function populatePeriods() {
 function activeStudents() {
   const period = element('gradingPeriodSelect').value;
   return roster.filter((student) => student.period === period).map((student) => student.name);
+}
+
+function seedGradeRows() {
+  const assignmentHeader = element('canvasAssignmentSelect').value;
+  const existingScores = new Map((canvasGradebook?.students || []).map((student) => [
+    String(student.Student || '').trim().toLowerCase(),
+    String(student[assignmentHeader] || '').trim()
+  ]));
+  actions = activeStudents().map((studentName) => ({
+    student_name: studentName,
+    score: existingScores.get(studentName.toLowerCase()) || '',
+    notes: '',
+    evidence: '',
+    confidence: ''
+  }));
+  renderActions();
+}
+
+function applyGradeActions(newActions) {
+  const byStudent = new Map(actions.map((action) => [action.student_name.toLowerCase(), action]));
+  newActions.forEach((newAction) => {
+    const existing = byStudent.get(newAction.student_name.toLowerCase());
+    if (existing) {
+      Object.assign(existing, newAction);
+    } else {
+      actions.push(newAction);
+    }
+  });
 }
 
 function gradingPrompt(transcript, assignment, period, students) {
@@ -1048,6 +1272,44 @@ function showWarnings(warnings) {
   container.classList.toggle('hidden', warnings.length === 0);
 }
 
+function showUnresolved() {
+  const container = element('gradingUnresolved');
+  container.replaceChildren();
+  if (!unresolvedNotes.length) {
+    container.classList.add('hidden');
+    return;
+  }
+  const heading = document.createElement('p');
+  heading.className = 'mb-2 text-xs font-bold uppercase text-slate-500';
+  heading.textContent = `${unresolvedNotes.length} note(s) need review or AI matching`;
+  container.append(heading);
+  unresolvedNotes.forEach((note) => {
+    const item = document.createElement('p');
+    item.className = 'border-t border-slate-100 py-2';
+    item.textContent = note;
+    container.append(item);
+  });
+  container.classList.remove('hidden');
+}
+
+function runClearMatching() {
+  const transcript = element('gradingTranscriptInput').value.trim();
+  const students = activeStudents();
+  if (!transcript || !students.length) {
+    element('gradingStatus').textContent = 'Load a roster and add grade notes first.';
+    return false;
+  }
+  const result = matchClearGrades(transcript, students);
+  locallyMatchedNames = result.matchedNames;
+  unresolvedNotes = result.unresolved;
+  applyGradeActions(result.actions);
+  renderActions();
+  showUnresolved();
+  showWarnings(unresolvedNotes.length ? ['Only high-confidence exact roster matches were applied locally. Review the notes below or send them to AI.'] : []);
+  element('gradingStatus').textContent = `${result.actions.length} clear grade(s) matched locally; ${unresolvedNotes.length} note(s) remain.`;
+  return true;
+}
+
 function downloadCsv() {
   if (!actions.length) return;
   const quote = (value) => `"${String(value).replaceAll('"', '""')}"`;
@@ -1060,6 +1322,29 @@ function downloadCsv() {
   link.download = `voice-grades-${Date.now()}.csv`;
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+function downloadFile(content, filename, type) {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([content], { type }));
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function populateCanvasAssignments() {
+  const select = element('canvasAssignmentSelect');
+  if (!canvasGradebook) {
+    select.replaceChildren(new Option('Import a Canvas gradebook', ''));
+    select.disabled = true;
+    return;
+  }
+  select.replaceChildren(...canvasGradebook.assignments.map((assignment) => new Option(
+    assignment.pointsPossible ? `${assignment.name} (${assignment.pointsPossible} points)` : assignment.name,
+    assignment.header
+  )));
+  select.disabled = false;
+  element('gradingAssignmentInput').value = canvasGradebook.assignments[0]?.name || '';
 }
 
 function initializeVoiceGrading(getSettings) {
@@ -1083,6 +1368,40 @@ function initializeVoiceGrading(getSettings) {
     }
   });
 
+  element('canvasGradebookInput').addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      canvasGradebook = parseCanvasGradebook(await file.text());
+      roster = canvasGradebook.students.map((student) => ({
+        name: String(student.Student || '').trim(),
+        period: String(student.Section || '').trim() || 'Canvas Import'
+      }));
+      populatePeriods();
+      populateCanvasAssignments();
+      seedGradeRows();
+      element('canvasGradebookStatus').textContent = `${roster.length} students and ${canvasGradebook.assignments.length} assignments loaded locally.`;
+      element('gradingRosterStatus').textContent = 'Canvas roster loaded.';
+      element('gradingStatus').textContent = 'Canvas gradebook ready for grading.';
+    } catch (error) {
+      canvasGradebook = null;
+      populateCanvasAssignments();
+      element('canvasGradebookStatus').textContent = error.message;
+    }
+  });
+
+  element('canvasAssignmentSelect').addEventListener('change', (event) => {
+    const assignment = canvasGradebook?.assignments.find((item) => item.header === event.target.value);
+    if (assignment) {
+      element('gradingAssignmentInput').value = assignment.name;
+      seedGradeRows();
+    }
+  });
+
+  element('gradingPeriodSelect').addEventListener('change', () => {
+    if (canvasGradebook) seedGradeRows();
+  });
+
   element('loadGradingModelsBtn').addEventListener('click', async () => {
     element('gradingStatus').textContent = 'Loading models...';
     try {
@@ -1101,13 +1420,46 @@ function initializeVoiceGrading(getSettings) {
     element('gradingStatus').textContent = 'Current transcript copied.';
   });
 
+  element('gradingRecordBtn').addEventListener('click', async () => {
+    const button = element('gradingRecordBtn');
+    if (!gradingRecorder.recording) {
+      try {
+        await gradingRecorder.start();
+        button.textContent = 'Stop and transcribe';
+        element('gradingStatus').textContent = 'Recording grade notes...';
+      } catch (error) {
+        element('gradingStatus').textContent = `Microphone failed: ${error.message}`;
+      }
+      return;
+    }
+
+    button.disabled = true;
+    try {
+      const recording = await gradingRecorder.stop();
+      element('gradingStatus').textContent = 'Transcribing grade notes...';
+      const wav = await blobToWav(recording);
+      const transcript = await transcribeBlob(wav.blob, wav.extension, getSettings());
+      const input = element('gradingTranscriptInput');
+      input.value = [input.value.trim(), transcript].filter(Boolean).join('\n');
+      runClearMatching();
+    } catch (error) {
+      element('gradingStatus').textContent = `Transcription failed: ${error.message}`;
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Start recording';
+    }
+  });
+
+  element('matchClearGradesBtn').addEventListener('click', runClearMatching);
+
   element('analyzeGradesBtn').addEventListener('click', async () => {
     const assignment = element('gradingAssignmentInput').value.trim();
-    const transcript = element('gradingTranscriptInput').value.trim();
+    if (!runClearMatching()) return;
+    const transcript = unresolvedNotes.join('\n');
     const model = element('gradingModelSelect').value.trim();
-    const students = activeStudents();
+    const students = remainingStudents(activeStudents(), locallyMatchedNames);
     if (!assignment || !transcript || !model || !students.length) {
-      element('gradingStatus').textContent = 'Add an assignment, transcript, roster, and grading model.';
+      element('gradingStatus').textContent = transcript ? 'Select a grading model to analyze unresolved notes.' : 'All notes were matched locally; no AI review is needed.';
       return;
     }
     const button = element('analyzeGradesBtn');
@@ -1116,8 +1468,10 @@ function initializeVoiceGrading(getSettings) {
     try {
       const response = await createChatCompletion(getSettings(), model, gradingPrompt(transcript, assignment, element('gradingPeriodSelect').value, students));
       const result = normalizeResults(extractJson(response));
-      actions = result.actions;
+      applyGradeActions(result.actions);
+      unresolvedNotes = [];
       renderActions();
+      showUnresolved();
       showWarnings(result.warnings);
       element('gradingStatus').textContent = `${actions.length} grade action(s) ready for review.`;
       saveGradeSettings({ assignment, model });
@@ -1129,6 +1483,16 @@ function initializeVoiceGrading(getSettings) {
   });
 
   element('exportGradesBtn').addEventListener('click', downloadCsv);
+  element('exportCanvasBtn').addEventListener('click', () => {
+    try {
+      if (!canvasGradebook) throw new Error('Import a Canvas gradebook first.');
+      const result = buildCanvasGradebookCsv(canvasGradebook, element('canvasAssignmentSelect').value, actions);
+      downloadFile(result.csv, `canvas-grades-${Date.now()}.csv`, 'text/csv');
+      element('gradingStatus').textContent = `${result.updated} score(s) merged into ${result.assignment}.`;
+    } catch (error) {
+      element('gradingStatus').textContent = `Canvas export failed: ${error.message}`;
+    }
+  });
 }
 
 // App wiring for the API-only build.
