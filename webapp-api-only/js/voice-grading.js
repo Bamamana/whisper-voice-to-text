@@ -112,6 +112,12 @@ function applyGradeActions(newActions) {
   });
 }
 
+function completedStudentNames() {
+  return new Set(actions
+    .filter((action) => action.score.trim())
+    .map((action) => action.student_name));
+}
+
 function gradingPrompt(transcript, assignment, period, students) {
   const rosterText = students.map((name) => `- ${name}`).join('\n');
   return `You convert teacher grading transcripts into structured grade actions.
@@ -216,15 +222,19 @@ function showUnresolved() {
   container.classList.remove('hidden');
 }
 
-function runClearMatching() {
-  const transcript = element('gradingTranscriptInput').value.trim();
-  const students = activeStudents();
+function runClearMatching(transcriptOverride = '') {
+  const transcriptSource = typeof transcriptOverride === 'string' && transcriptOverride
+    ? transcriptOverride
+    : element('gradingTranscriptInput').value;
+  const transcript = transcriptSource.trim();
+  const completedNames = completedStudentNames();
+  const students = remainingStudents(activeStudents(), completedNames);
   if (!transcript || !students.length) {
-    element('gradingStatus').textContent = 'Load a roster and add grade notes first.';
+    element('gradingStatus').textContent = students.length ? 'Load a roster and add grade notes first.' : 'All students in this period already have grades.';
     return false;
   }
   const result = matchClearGrades(transcript, students);
-  locallyMatchedNames = result.matchedNames;
+  locallyMatchedNames = new Set([...completedNames, ...result.matchedNames]);
   unresolvedNotes = result.unresolved;
   applyGradeActions(result.actions);
   renderActions();
@@ -365,7 +375,7 @@ export function initializeVoiceGrading(getSettings) {
       const transcript = await transcribeBlob(wav.blob, wav.extension, getSettings());
       const input = element('gradingTranscriptInput');
       input.value = [input.value.trim(), transcript].filter(Boolean).join('\n');
-      runClearMatching();
+      runClearMatching(transcript);
     } catch (error) {
       element('gradingStatus').textContent = `Transcription failed: ${error.message}`;
     } finally {
@@ -378,7 +388,10 @@ export function initializeVoiceGrading(getSettings) {
 
   element('analyzeGradesBtn').addEventListener('click', async () => {
     const assignment = element('gradingAssignmentInput').value.trim();
-    if (!runClearMatching()) return;
+    if (!unresolvedNotes.length) {
+      element('gradingStatus').textContent = 'Run clear matching first, or all grade notes have already been matched.';
+      return;
+    }
     const transcript = unresolvedNotes.join('\n');
     const model = element('gradingModelSelect').value.trim();
     const students = remainingStudents(activeStudents(), locallyMatchedNames);
