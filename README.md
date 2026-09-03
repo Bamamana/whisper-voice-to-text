@@ -15,6 +15,9 @@ It supports:
 - desktop launchers on both Linux and Windows
 - a packaged Windows installer (`WhisperVoiceToTextSetup.exe`)
 
+For the Cloudflare-protected hosted Whisper and Voice Grading app, see
+[Hosted Deployment Runbook](docs/HOSTED_DEPLOYMENT.md).
+
 ## Repo Versions
 
 **The repo root is v1 — the Whisper voice-to-text app.** Everything at the top level (`app.py`, the install and launch scripts, the docs listed below) is the app from the [Show and tell post](https://github.com/openai/whisper/discussions/2746). Start here if you want local voice-to-text.
