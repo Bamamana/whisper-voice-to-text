@@ -12,6 +12,7 @@ const element = (id) => document.getElementById(id);
 let roster = [];
 let actions = [];
 let canvasGradebook = null;
+let savedCanvasActions = {};
 let unresolvedNotes = [];
 let locallyMatchedNames = new Set();
 let changedStudentNames = new Set();
@@ -32,7 +33,7 @@ function saveGradeSettings(settings) {
 
 function persistSession() {
   saveGradeSession({
-    roster, actions, canvasGradebook, unresolvedNotes, auditLog,
+    roster, actions, canvasGradebook, savedCanvasActions, unresolvedNotes, auditLog,
     locallyMatchedNames: [...locallyMatchedNames], changedStudentNames: [...changedStudentNames],
     transcript: element('gradingTranscriptInput').value,
     period: element('gradingPeriodSelect').value,
@@ -103,6 +104,13 @@ function activeStudents() {
 
 function seedGradeRows() {
   const assignmentHeader = element('canvasAssignmentSelect').value;
+  const savedActions = savedCanvasActions[assignmentHeader];
+  if (savedActions) {
+    actions = savedActions.map((action) => ({ ...action }));
+    renderActions();
+    persistSession();
+    return;
+  }
   const existingScores = new Map((canvasGradebook?.students || []).map((student) => [
     String(student.Student || '').trim().toLowerCase(),
     String(student[assignmentHeader] || '').trim()
@@ -116,6 +124,23 @@ function seedGradeRows() {
   }));
   renderActions();
   persistSession();
+}
+
+function saveCanvasAssignment() {
+  if (!canvasGradebook) {
+    element('gradingStatus').textContent = 'Import a Canvas gradebook before saving assignment grades.';
+    return;
+  }
+  const assignmentHeader = element('canvasAssignmentSelect').value;
+  const assignment = canvasGradebook.assignments.find((item) => item.header === assignmentHeader);
+  if (!assignment) {
+    element('gradingStatus').textContent = 'Choose a Canvas assignment before saving grades.';
+    return;
+  }
+  savedCanvasActions[assignmentHeader] = actions.map((action) => ({ ...action }));
+  persistSession();
+  const graded = actions.filter((action) => action.score.trim()).length;
+  element('gradingStatus').textContent = `${graded} grade(s) saved for ${assignment.name}.`;
 }
 
 function applyGradeActions(newActions, source = 'Local matching') {
@@ -323,6 +348,7 @@ export function initializeVoiceGrading(getSettings) {
     roster = session.roster;
     actions = session.actions || [];
     canvasGradebook = session.canvasGradebook || null;
+    savedCanvasActions = session.savedCanvasActions || {};
     unresolvedNotes = session.unresolvedNotes || [];
     auditLog = session.auditLog || [];
     locallyMatchedNames = new Set(session.locallyMatchedNames || []);
@@ -342,7 +368,7 @@ export function initializeVoiceGrading(getSettings) {
     if (!file) return;
     try {
       roster = parseRosterCsv(await file.text());
-      actions = []; canvasGradebook = null; unresolvedNotes = []; locallyMatchedNames = new Set(); changedStudentNames = new Set(); auditLog = [];
+      actions = []; canvasGradebook = null; savedCanvasActions = {}; unresolvedNotes = []; locallyMatchedNames = new Set(); changedStudentNames = new Set(); auditLog = [];
       if (!roster.length) throw new Error('No students were found in this roster.');
       populatePeriods();
       renderActions();
@@ -361,7 +387,7 @@ export function initializeVoiceGrading(getSettings) {
     if (!file) return;
     try {
       canvasGradebook = parseCanvasGradebook(await file.text());
-      unresolvedNotes = []; locallyMatchedNames = new Set(); changedStudentNames = new Set(); auditLog = [];
+      savedCanvasActions = {}; unresolvedNotes = []; locallyMatchedNames = new Set(); changedStudentNames = new Set(); auditLog = [];
       roster = canvasGradebook.students.map((student) => ({
         name: String(student.Student || '').trim(),
         period: String(student.Section || '').trim() || 'Canvas Import'
@@ -443,6 +469,7 @@ export function initializeVoiceGrading(getSettings) {
   });
 
   element('matchClearGradesBtn').addEventListener('click', runClearMatching);
+  element('saveCanvasAssignmentBtn').addEventListener('click', saveCanvasAssignment);
 
   element('analyzeGradesBtn').addEventListener('click', async () => {
     const assignment = element('gradingAssignmentInput').value.trim();
@@ -484,16 +511,16 @@ export function initializeVoiceGrading(getSettings) {
   element('exportAuditBtn').addEventListener('click', () => exportGradeAudit(auditLog));
   element('clearGradingSessionBtn').addEventListener('click', () => {
     if (!window.confirm('Clear this saved grading session?')) return;
-    clearGradeSession(); roster = []; actions = []; canvasGradebook = null; unresolvedNotes = []; locallyMatchedNames = new Set(); changedStudentNames = new Set(); auditLog = [];
+    clearGradeSession(); roster = []; actions = []; canvasGradebook = null; savedCanvasActions = {}; unresolvedNotes = []; locallyMatchedNames = new Set(); changedStudentNames = new Set(); auditLog = [];
     populatePeriods(); populateCanvasAssignments(); element('gradingTranscriptInput').value = ''; renderActions(); showUnresolved();
     element('gradingStatus').textContent = 'Saved grading session cleared.';
   });
   element('exportCanvasBtn').addEventListener('click', () => {
     try {
       if (!canvasGradebook) throw new Error('Import a Canvas gradebook first.');
-      const result = buildCanvasGradebookCsv(canvasGradebook, element('canvasAssignmentSelect').value, actions);
+      const result = buildCanvasGradebookCsv(canvasGradebook, savedCanvasActions);
       downloadFile(result.csv, `canvas-grades-${Date.now()}.csv`, 'text/csv');
-      element('gradingStatus').textContent = `${result.updated} score(s) merged into ${result.assignment}.`;
+      element('gradingStatus').textContent = `${result.updated} score(s) merged across ${result.assignments.length} saved assignment(s).`;
     } catch (error) {
       element('gradingStatus').textContent = `Canvas export failed: ${error.message}`;
     }

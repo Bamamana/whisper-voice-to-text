@@ -100,28 +100,31 @@ function quoteCsv(value) {
   return `"${String(value || '').replaceAll('"', '""')}"`;
 }
 
-export function buildCanvasGradebookCsv(template, assignmentHeader, actions) {
-  const assignment = template.assignments.find((item) => item.header === assignmentHeader);
-  if (!assignment) throw new Error('Choose a Canvas assignment before exporting.');
-  const byStudent = new Map(actions.map((action) => [action.student_name.trim().toLowerCase(), action]));
+export function buildCanvasGradebookCsv(template, savedAssignmentActions) {
+  const savedAssignments = Object.entries(savedAssignmentActions || {})
+    .filter(([assignmentHeader, actions]) => template.assignments.some((assignment) => assignment.header === assignmentHeader) && Array.isArray(actions));
+  if (!savedAssignments.length) throw new Error('Save grades for at least one Canvas assignment before exporting.');
   let updated = 0;
   const outputRows = [];
   if (template.pointsPossible) outputRows.push(template.pointsPossible);
   template.students.forEach((student) => {
-    const action = byStudent.get(String(student.Student || '').trim().toLowerCase());
-    const score = action?.score.trim() ? canvasScore(action.score, assignment.pointsPossible) : null;
-    const maximum = numeric(assignment.pointsPossible);
-    if (action?.score.trim() && (score === null || numeric(score) < 0 || (maximum !== null && numeric(score) > maximum))) {
-      throw new Error(`${action.student_name} has a score outside this assignment's valid range: ${action.score}`);
-    }
     const row = { ...student };
-    if (score !== null) {
-      row[assignmentHeader] = score;
-      updated += 1;
-    }
+    savedAssignments.forEach(([assignmentHeader, actions]) => {
+      const assignment = template.assignments.find((item) => item.header === assignmentHeader);
+      const action = actions.find((item) => item.student_name.trim().toLowerCase() === String(student.Student || '').trim().toLowerCase());
+      const score = action?.score.trim() ? canvasScore(action.score, assignment.pointsPossible) : null;
+      const maximum = numeric(assignment.pointsPossible);
+      if (action?.score.trim() && (score === null || numeric(score) < 0 || (maximum !== null && numeric(score) > maximum))) {
+        throw new Error(`${action.student_name} has a score outside ${assignment.name}'s valid range: ${action.score}`);
+      }
+      if (score !== null) {
+        row[assignmentHeader] = score;
+        updated += 1;
+      }
+    });
     outputRows.push(row);
   });
   const lines = [template.headers, ...outputRows.map((row) => template.headers.map((header) => row[header] || ''))]
     .map((row) => row.map(quoteCsv).join(','));
-  return { csv: lines.join('\n'), updated, assignment: assignment.name };
+  return { csv: lines.join('\n'), updated, assignments: savedAssignments.map(([header]) => template.assignments.find((item) => item.header === header).name) };
 }
