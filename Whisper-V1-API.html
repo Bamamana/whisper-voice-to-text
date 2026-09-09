@@ -1220,6 +1220,53 @@ function updateProgress(progressElement, total, graded) {
   progressElement.textContent = total ? `${graded} of ${total} graded` : '0 graded';
 }
 
+function normalize(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function nameTokens(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter((token) => token.length > 1);
+}
+
+function similarity(left, right) {
+  if (!left || !right) return 0;
+  const matrix = Array.from({ length: right.length + 1 }, (_, index) => [index]);
+  for (let index = 0; index <= left.length; index += 1) matrix[0][index] = index;
+  for (let row = 1; row <= right.length; row += 1) {
+    for (let column = 1; column <= left.length; column += 1) {
+      matrix[row][column] = Math.min(
+        matrix[row - 1][column] + 1,
+        matrix[row][column - 1] + 1,
+        matrix[row - 1][column - 1] + (right[row - 1] === left[column - 1] ? 0 : 1)
+      );
+    }
+  }
+  return 1 - matrix[right.length][left.length] / Math.max(left.length, right.length);
+}
+
+function spokenName(note) {
+  const match = /^(?:change|update|correct)\s+(.+?)\s+(?:to|as)\s+.+$|^(.+?)(?:,?\s+(?:you\s+)?(?:gets?|got|has|earned|earns|receiv(?:e|es|ed)|scored?|score|was|is)\s+).+$/i.exec(note);
+  return (match?.[1] || match?.[2] || note.split(/[,.:;!?]/, 1)[0]).trim();
+}
+
+function unresolvedCandidates(note, studentNames, limit = 3) {
+  const spoken = normalize(spokenName(note));
+  const tokens = nameTokens(spokenName(note));
+  return studentNames.map((studentName) => {
+    const candidate = normalize(studentName);
+    const candidateTokens = nameTokens(studentName);
+    const tokenMatches = tokens.filter((token) => candidateTokens.some((candidateToken) => candidateToken.includes(token) || token.includes(candidateToken))).length;
+    return { studentName, score: tokenMatches * 2 + similarity(spoken, candidate) };
+  }).sort((left, right) => right.score - left.score || left.studentName.localeCompare(right.studentName)).slice(0, limit);
+}
+
+function unresolvedGrade(note) {
+  const fraction = /(\d+(?:\.\d+)?)\s*(?:\/|out of)\s*(\d+(?:\.\d+)?)/i.exec(note);
+  if (fraction) return `${fraction[1]}/${fraction[2]}`;
+  const namedScore = /(?:gets?|got|has|earned|earns|receiv(?:e|es|ed)|scored?|score|was|is)\s+(\d+(?:\.\d+)?)(?:\b|$)/i.exec(note);
+  return namedScore ? namedScore[1] : '';
+}
+
 
 const GRADE_STORAGE_KEY = 'wv1api_grading_settings';
 const element = (id) => document.getElementById(id);
@@ -1317,6 +1364,10 @@ function activeStudents() {
   return roster.filter((student) => student.period === period).map((student) => student.name);
 }
 
+function importedScoreNeedsGrading(score) {
+  return /^0(?:\.0+)?$/.test(String(score || '').trim());
+}
+
 function seedGradeRows() {
   const assignmentHeader = element('canvasAssignmentSelect').value;
   const savedActions = savedCanvasActions[assignmentHeader];
@@ -1332,7 +1383,7 @@ function seedGradeRows() {
   ]));
   actions = activeStudents().map((studentName) => ({
     student_name: studentName,
-    score: existingScores.get(studentName.toLowerCase()) || '',
+    score: importedScoreNeedsGrading(existingScores.get(studentName.toLowerCase())) ? '' : existingScores.get(studentName.toLowerCase()) || '',
     notes: '',
     evidence: '',
     confidence: ''
@@ -1483,6 +1534,24 @@ function showWarnings(warnings) {
   container.classList.toggle('hidden', warnings.length === 0);
 }
 
+function applyUnresolvedSelection(index, studentName) {
+  const note = unresolvedNotes[index];
+  const score = unresolvedGrade(note);
+  if (!score) {
+    element('gradingStatus').textContent = 'This note has no explicit score to apply. Edit it or send it to AI.';
+    return;
+  }
+  applyGradeActions([{
+    student_name: studentName, score, notes: '', evidence: note, confidence: 'Manual selection'
+  }], 'Manual name selection');
+  locallyMatchedNames.add(studentName);
+  unresolvedNotes.splice(index, 1);
+  renderActions();
+  showUnresolved();
+  persistSession();
+  element('gradingStatus').textContent = `Applied ${score} to ${studentName}.`;
+}
+
 function showUnresolved() {
   const container = element('gradingUnresolved');
   container.replaceChildren();
@@ -1501,13 +1570,26 @@ function showUnresolved() {
     text.textContent = note;
     const controls = document.createElement('div');
     controls.className = 'mt-2 flex gap-2';
+    const candidates = unresolvedCandidates(note, remainingStudents(activeStudents(), completedStudentNames()));
+    const select = document.createElement('select');
+    select.className = 'border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800';
+    select.append(new Option('Choose likely student', ''));
+    candidates.forEach((candidate, candidateIndex) => {
+      select.append(new Option(`${candidateIndex + 1}. ${candidate.studentName}`, candidate.studentName));
+    });
+    const apply = document.createElement('button');
+    apply.type = 'button'; apply.className = 'text-xs font-bold text-emerald-700 disabled:text-slate-400'; apply.textContent = 'Apply match';
+    apply.disabled = !unresolvedGrade(note) || !candidates.length;
+    apply.addEventListener('click', () => {
+      if (select.value) applyUnresolvedSelection(index, select.value);
+    });
     const edit = document.createElement('button');
     edit.type = 'button'; edit.className = 'text-xs font-bold text-brand-700'; edit.textContent = 'Edit note';
     edit.addEventListener('click', () => { element('gradingTranscriptInput').value = note; element('gradingTranscriptInput').focus(); });
     const reviewed = document.createElement('button');
     reviewed.type = 'button'; reviewed.className = 'text-xs font-bold text-slate-600'; reviewed.textContent = 'Mark reviewed';
     reviewed.addEventListener('click', () => { unresolvedNotes.splice(index, 1); showUnresolved(); persistSession(); });
-    controls.append(edit, reviewed);
+    controls.append(select, apply, edit, reviewed);
     item.append(text, controls);
     container.append(item);
   });

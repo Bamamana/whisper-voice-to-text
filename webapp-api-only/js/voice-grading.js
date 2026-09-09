@@ -2,6 +2,7 @@ import { MicRecorder, blobToWav } from './audio.js';
 import { createChatCompletion, discoverModels, transcribeBlob } from './transcription.js';
 import { buildCanvasGradebookCsv, parseCanvasGradebook } from './canvas-gradebook.js';
 import { matchClearGrades, remainingStudents } from './grade-matching.js';
+import { unresolvedCandidates, unresolvedGrade } from './unresolved-review.js';
 import { clearGradeSession, loadGradeSession, saveGradeSession } from './grading-session.js';
 import { downloadFile, exportChangedGrades, exportGradeActions, exportGradeAudit } from './grade-exports.js';
 import { recordAudit, scoreIssue, updateProgress } from './grade-ui.js';
@@ -102,6 +103,10 @@ function activeStudents() {
   return roster.filter((student) => student.period === period).map((student) => student.name);
 }
 
+function importedScoreNeedsGrading(score) {
+  return /^0(?:\.0+)?$/.test(String(score || '').trim());
+}
+
 function seedGradeRows() {
   const assignmentHeader = element('canvasAssignmentSelect').value;
   const savedActions = savedCanvasActions[assignmentHeader];
@@ -117,7 +122,7 @@ function seedGradeRows() {
   ]));
   actions = activeStudents().map((studentName) => ({
     student_name: studentName,
-    score: existingScores.get(studentName.toLowerCase()) || '',
+    score: importedScoreNeedsGrading(existingScores.get(studentName.toLowerCase())) ? '' : existingScores.get(studentName.toLowerCase()) || '',
     notes: '',
     evidence: '',
     confidence: ''
@@ -268,6 +273,24 @@ function showWarnings(warnings) {
   container.classList.toggle('hidden', warnings.length === 0);
 }
 
+function applyUnresolvedSelection(index, studentName) {
+  const note = unresolvedNotes[index];
+  const score = unresolvedGrade(note);
+  if (!score) {
+    element('gradingStatus').textContent = 'This note has no explicit score to apply. Edit it or send it to AI.';
+    return;
+  }
+  applyGradeActions([{
+    student_name: studentName, score, notes: '', evidence: note, confidence: 'Manual selection'
+  }], 'Manual name selection');
+  locallyMatchedNames.add(studentName);
+  unresolvedNotes.splice(index, 1);
+  renderActions();
+  showUnresolved();
+  persistSession();
+  element('gradingStatus').textContent = `Applied ${score} to ${studentName}.`;
+}
+
 function showUnresolved() {
   const container = element('gradingUnresolved');
   container.replaceChildren();
@@ -286,13 +309,26 @@ function showUnresolved() {
     text.textContent = note;
     const controls = document.createElement('div');
     controls.className = 'mt-2 flex gap-2';
+    const candidates = unresolvedCandidates(note, remainingStudents(activeStudents(), completedStudentNames()));
+    const select = document.createElement('select');
+    select.className = 'border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800';
+    select.append(new Option('Choose likely student', ''));
+    candidates.forEach((candidate, candidateIndex) => {
+      select.append(new Option(`${candidateIndex + 1}. ${candidate.studentName}`, candidate.studentName));
+    });
+    const apply = document.createElement('button');
+    apply.type = 'button'; apply.className = 'text-xs font-bold text-emerald-700 disabled:text-slate-400'; apply.textContent = 'Apply match';
+    apply.disabled = !unresolvedGrade(note) || !candidates.length;
+    apply.addEventListener('click', () => {
+      if (select.value) applyUnresolvedSelection(index, select.value);
+    });
     const edit = document.createElement('button');
     edit.type = 'button'; edit.className = 'text-xs font-bold text-brand-700'; edit.textContent = 'Edit note';
     edit.addEventListener('click', () => { element('gradingTranscriptInput').value = note; element('gradingTranscriptInput').focus(); });
     const reviewed = document.createElement('button');
     reviewed.type = 'button'; reviewed.className = 'text-xs font-bold text-slate-600'; reviewed.textContent = 'Mark reviewed';
     reviewed.addEventListener('click', () => { unresolvedNotes.splice(index, 1); showUnresolved(); persistSession(); });
-    controls.append(edit, reviewed);
+    controls.append(select, apply, edit, reviewed);
     item.append(text, controls);
     container.append(item);
   });

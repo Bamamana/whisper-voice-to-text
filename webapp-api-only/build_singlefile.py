@@ -18,6 +18,7 @@ MODULE_ORDER = [
     "js/grading-session.js",
     "js/grade-exports.js",
     "js/grade-ui.js",
+    "js/unresolved-review.js",
     "js/voice-grading.js",
     "js/app.js",
 ]
