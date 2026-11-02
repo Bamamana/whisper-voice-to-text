@@ -12,5 +12,5 @@ if ! curl -s "http://127.0.0.1:${PORT}/Whisper-V1-API.html" >/dev/null 2>&1; the
   sleep 1
 fi
 
-xdg-open "http://127.0.0.1:${PORT}/Whisper-V1-API.html" >/dev/null 2>&1 || true
-echo "Whisper V1 API opened at http://127.0.0.1:${PORT}/Whisper-V1-API.html"
+xdg-open "http://127.0.0.1:${PORT}/Whisper-V1-API.html?t=$(date +%s)#lemonade" >/dev/null 2>&1 || true
+echo "Whisper V1 API opened at http://127.0.0.1:${PORT}/Whisper-V1-API.html#lemonade (local Lemonade)"

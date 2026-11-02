@@ -241,7 +241,7 @@ const providerProfiles = {
   lemonade: {
     label: 'AMD Lemonade (LAN)',
     transport: 'openai',
-    url: 'http://localhost:13305/v1',
+    url: 'http://127.0.0.1:13305/v1',
     apiKeyRequired: false,
     sttModel: 'Whisper-Large-v3-Turbo',
     liveModel: 'Moonshine-Medium-Streaming'
@@ -1837,12 +1837,18 @@ function initializeVoiceGrading(getSettings) {
 const recorder = new MicRecorder();
 let settings = loadSettings();
 
-// The desktop launcher opens this page as ".../Whisper-V1-API.html#local" so the
-// local whisper.cpp server is used regardless of any previously saved provider.
+// The desktop launcher opens this page with a "#<provider>" fragment so the
+// intended server is used regardless of any previously saved provider.
+//   "#local"    -> local whisper.cpp server (this PC, port 8090)
+//   "#lemonade" -> local Lemonade server (this PC, port 13305)
 if (/(^|[#&])local\b/i.test(location.hash)) {
   settings.provider = 'localWhisper';
   settings.baseUrl = providerProfiles.localWhisper.url;
   settings.model = providerProfiles.localWhisper.sttModel;
+} else if (/(^|[#&])lemonade\b/i.test(location.hash)) {
+  settings.provider = 'lemonade';
+  settings.baseUrl = providerProfiles.lemonade.url;
+  settings.model = providerProfiles.lemonade.sttModel;
 }
 let live = null; // LiveTranscriber instance while a live session runs
 
