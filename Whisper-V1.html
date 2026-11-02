@@ -186,10 +186,17 @@ const providerProfiles = {
     url: '',
     apiKeyRequired: false,
     sttModel: 'whisper-1'
+  },
+  localWhisper: {
+    label: 'Local whisper.cpp (this PC)',
+    transport: 'openai',
+    url: 'http://127.0.0.1:8090/v1',
+    apiKeyRequired: false,
+    sttModel: 'whisper-1'
   }
 };
 
-const PROVIDER_ORDER = ['lemonade', 'openrouter', 'openai', 'gemini', 'local', 'compatible'];
+const PROVIDER_ORDER = ['localWhisper', 'lemonade', 'openrouter', 'openai', 'gemini', 'local', 'compatible'];
 
 function getProviderProfile(provider) {
   return providerProfiles[provider] || providerProfiles.compatible;

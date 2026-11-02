@@ -261,6 +261,13 @@ const providerProfiles = {
     apiKeyRequired: true,
     sttModel: 'whisper-1'
   },
+  localWhisper: {
+    label: 'Local whisper.cpp (this PC)',
+    transport: 'openai',
+    url: 'http://127.0.0.1:8090/v1',
+    apiKeyRequired: false,
+    sttModel: 'whisper-1'
+  },
   openrouter: {
     label: 'OpenRouter',
     transport: 'openai',
@@ -306,7 +313,7 @@ const providerProfiles = {
   }
 };
 
-const PROVIDER_ORDER = ['hosted', 'lemonade', 'lemonadeCloud', 'lmstudio', 'openrouter', 'openai', 'gemini', 'lan', 'compatible'];
+const PROVIDER_ORDER = ['localWhisper', 'hosted', 'lemonade', 'lemonadeCloud', 'lmstudio', 'openrouter', 'openai', 'gemini', 'lan', 'compatible'];
 
 function getProviderProfile(provider) {
   return providerProfiles[provider] || providerProfiles.compatible;
@@ -322,7 +329,7 @@ function getTransport(provider) {
 const STORAGE_KEY = 'wv1api_settings';
 
 const defaultSettings = {
-  provider: 'hosted',
+  provider: 'localWhisper',
   apiKey: '',
   baseUrl: '',
   model: '',
@@ -1829,6 +1836,14 @@ function initializeVoiceGrading(getSettings) {
 
 const recorder = new MicRecorder();
 let settings = loadSettings();
+
+// The desktop launcher opens this page as ".../Whisper-V1-API.html#local" so the
+// local whisper.cpp server is used regardless of any previously saved provider.
+if (/(^|[#&])local\b/i.test(location.hash)) {
+  settings.provider = 'localWhisper';
+  settings.baseUrl = providerProfiles.localWhisper.url;
+  settings.model = providerProfiles.localWhisper.sttModel;
+}
 let live = null; // LiveTranscriber instance while a live session runs
 
 const $ = (id) => document.getElementById(id);
